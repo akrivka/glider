@@ -1,8 +1,11 @@
+export type CheckboxState = 'none' | 'unchecked' | 'checked';
+
 export interface Block {
   id: string;
-  content: string;
+  content: string; // HTML string with rich-text formatting
   children: Block[];
   collapsed: boolean;
+  checkboxState: CheckboxState;
 }
 
 export interface OutlineState {
@@ -19,5 +22,6 @@ export function createBlock(content: string = '', children: Block[] = []): Block
     content,
     children,
     collapsed: false,
+    checkboxState: 'none',
   };
 }

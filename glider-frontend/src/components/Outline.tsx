@@ -1,9 +1,13 @@
 import { Component, For, createSignal, onMount, onCleanup } from 'solid-js';
 import { outlineStore } from '../store/outlineStore';
 import { Block } from './Block';
+import { Breadcrumbs } from './Breadcrumbs';
 
 export const Outline: Component = () => {
   const [focusRequest, setFocusRequest] = createSignal<{ id: string; position: 'start' | 'end' | number } | null>(null);
+
+  const visibleBlocks = () => outlineStore.getVisibleBlocks();
+  const zoomPath = () => outlineStore.state.zoomPath;
 
   const handleFocusEvent = (e: CustomEvent<{ id: string; position: 'start' | 'end' | number }>) => {
     setFocusRequest(e.detail);
@@ -29,11 +33,12 @@ export const Outline: Component = () => {
 
   return (
     <div class="outline-container max-w-3xl mx-auto p-4">
-      <For each={outlineStore.state.blocks}>
+      <Breadcrumbs />
+      <For each={visibleBlocks()}>
         {(block, index) => (
           <Block
             block={block}
-            path={[index()]}
+            path={[...zoomPath(), index()]}
             focusRequest={focusRequest()}
             onFocusHandled={handleFocusHandled}
           />

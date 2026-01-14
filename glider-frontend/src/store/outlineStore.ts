@@ -1,5 +1,5 @@
 import { createStore, produce } from 'solid-js/store';
-import { Block, createBlock, OutlineState } from '../types/outline';
+import { Block, createBlock, OutlineState, CheckboxState } from '../types/outline';
 
 // Path represents the position of a block in the tree as an array of indices
 export type BlockPath = number[];
@@ -9,13 +9,18 @@ export interface BlockLocation {
   block: Block;
 }
 
-function createInitialState(): OutlineState {
+export interface OutlineStoreState extends OutlineState {
+  zoomPath: BlockPath; // Path to the currently zoomed block (empty = root level)
+}
+
+function createInitialState(): OutlineStoreState {
   return {
     blocks: [createBlock('')],
+    zoomPath: [],
   };
 }
 
-const [state, setState] = createStore<OutlineState>(createInitialState());
+const [state, setState] = createStore<OutlineStoreState>(createInitialState());
 
 // Get block at a given path
 function getBlockAtPath(blocks: Block[], path: BlockPath): Block | null {
@@ -313,6 +318,113 @@ function getLastVisibleDescendant(block: Block): Block {
   return getLastVisibleDescendant(block.children[block.children.length - 1]);
 }
 
+// Cycle checkbox state: none -> unchecked -> checked -> none
+function cycleCheckboxState(id: string) {
+  const path = findBlockPath(state.blocks, id);
+  if (!path) return;
+
+  setState(produce((s) => {
+    let current: Block[] = s.blocks;
+    for (let i = 0; i < path.length - 1; i++) {
+      current = current[path[i]].children;
+    }
+    const block = current[path[path.length - 1]];
+    const currentState = block.checkboxState;
+
+    if (currentState === 'none') {
+      block.checkboxState = 'unchecked';
+    } else if (currentState === 'unchecked') {
+      block.checkboxState = 'checked';
+    } else {
+      block.checkboxState = 'none';
+    }
+  }));
+}
+
+// Update checkbox state directly
+function setCheckboxState(id: string, checkboxState: CheckboxState) {
+  const path = findBlockPath(state.blocks, id);
+  if (!path) return;
+
+  setState(produce((s) => {
+    let current: Block[] = s.blocks;
+    for (let i = 0; i < path.length - 1; i++) {
+      current = current[path[i]].children;
+    }
+    current[path[path.length - 1]].checkboxState = checkboxState;
+  }));
+}
+
+// Get the blocks to display based on current zoom level
+function getVisibleBlocks(): Block[] {
+  if (state.zoomPath.length === 0) {
+    return state.blocks;
+  }
+  const zoomedBlock = getBlockAtPath(state.blocks, state.zoomPath);
+  return zoomedBlock ? zoomedBlock.children : state.blocks;
+}
+
+// Get breadcrumb path (list of blocks from root to current zoom level)
+function getBreadcrumbs(): BlockLocation[] {
+  const breadcrumbs: BlockLocation[] = [];
+  for (let i = 1; i <= state.zoomPath.length; i++) {
+    const path = state.zoomPath.slice(0, i);
+    const block = getBlockAtPath(state.blocks, path);
+    if (block) {
+      breadcrumbs.push({ path, block });
+    }
+  }
+  return breadcrumbs;
+}
+
+// Zoom into a block (make it the new root)
+function zoomIn(id: string): string | null {
+  const path = findBlockPath(state.blocks, id);
+  if (!path) return null;
+
+  const block = getBlockAtPath(state.blocks, path);
+  if (!block || block.children.length === 0) return null;
+
+  setState(produce((s) => {
+    s.zoomPath = path;
+  }));
+
+  // Return the ID of the first child to focus on
+  return block.children[0].id;
+}
+
+// Zoom out one level
+function zoomOut(): string | null {
+  if (state.zoomPath.length === 0) return null;
+
+  const currentZoomPath = [...state.zoomPath];
+  const newZoomPath = currentZoomPath.slice(0, -1);
+
+  // Get the block we were zoomed into (to focus on it after zooming out)
+  const blockToFocus = getBlockAtPath(state.blocks, currentZoomPath);
+
+  setState(produce((s) => {
+    s.zoomPath = newZoomPath;
+  }));
+
+  return blockToFocus?.id || null;
+}
+
+// Zoom to a specific level in the breadcrumb
+function zoomTo(path: BlockPath): string | null {
+  if (path.length > state.zoomPath.length) return null;
+
+  const blockToFocus = path.length > 0
+    ? getBlockAtPath(state.blocks, [...path, 0])
+    : state.blocks[0];
+
+  setState(produce((s) => {
+    s.zoomPath = path;
+  }));
+
+  return blockToFocus?.id || null;
+}
+
 export const outlineStore = {
   get state() { return state; },
   getBlockAtPath,
@@ -328,4 +440,11 @@ export const outlineStore = {
   mergeWithPrevious,
   indentBlock,
   unindentBlock,
+  cycleCheckboxState,
+  setCheckboxState,
+  getVisibleBlocks,
+  getBreadcrumbs,
+  zoomIn,
+  zoomOut,
+  zoomTo,
 };

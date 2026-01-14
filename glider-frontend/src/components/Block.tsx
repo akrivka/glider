@@ -1,4 +1,4 @@
-import { Component, For, Show, createEffect, onMount } from 'solid-js';
+import { Component, For, Show, createEffect, onMount, createSignal } from 'solid-js';
 import { Block as BlockType } from '../types/outline';
 import { outlineStore, BlockPath } from '../store/outlineStore';
 
@@ -11,6 +11,8 @@ interface BlockProps {
 
 export const Block: Component<BlockProps> = (props) => {
   let contentRef: HTMLDivElement | undefined;
+  const [showLinkModal, setShowLinkModal] = createSignal(false);
+  const [linkUrl, setLinkUrl] = createSignal('');
 
   const hasChildren = () => props.block.children.length > 0;
   const isCollapsed = () => props.block.collapsed;
@@ -19,7 +21,7 @@ export const Block: Component<BlockProps> = (props) => {
   // Set initial content on mount
   onMount(() => {
     if (contentRef) {
-      contentRef.textContent = props.block.content;
+      contentRef.innerHTML = props.block.content || '';
     }
   });
 
@@ -27,7 +29,7 @@ export const Block: Component<BlockProps> = (props) => {
   createEffect(() => {
     const content = props.block.content;
     if (contentRef && document.activeElement !== contentRef) {
-      contentRef.textContent = content;
+      contentRef.innerHTML = content || '';
     }
   });
 
@@ -36,38 +38,75 @@ export const Block: Component<BlockProps> = (props) => {
     const req = props.focusRequest;
     if (req && req.id === props.block.id && contentRef) {
       // Sync content before focusing (important for split/merge operations)
-      if (contentRef.textContent !== props.block.content) {
-        contentRef.textContent = props.block.content;
+      if (contentRef.innerHTML !== props.block.content) {
+        contentRef.innerHTML = props.block.content || '';
       }
 
       contentRef.focus();
 
       const selection = window.getSelection();
-      const range = document.createRange();
-      const textNode = contentRef.firstChild;
+      if (!selection) return;
 
-      if (req.position === 'start') {
-        range.setStart(contentRef, 0);
-        range.collapse(true);
-      } else if (req.position === 'end') {
-        if (textNode) {
-          range.setStart(textNode, textNode.textContent?.length || 0);
-        } else {
+      try {
+        const range = document.createRange();
+
+        if (req.position === 'start') {
           range.setStart(contentRef, 0);
+          range.collapse(true);
+        } else if (req.position === 'end') {
+          // Move to end of content
+          if (contentRef.lastChild) {
+            const lastNode = contentRef.lastChild;
+            if (lastNode.nodeType === Node.TEXT_NODE) {
+              range.setStart(lastNode, lastNode.textContent?.length || 0);
+            } else {
+              range.setStartAfter(lastNode);
+            }
+          } else {
+            range.setStart(contentRef, 0);
+          }
+          range.collapse(true);
+        } else if (typeof req.position === 'number') {
+          // Position cursor at specific offset in text content
+          const targetOffset = req.position;
+          let currentOffset = 0;
+          let found = false;
+
+          const walker = document.createTreeWalker(
+            contentRef,
+            NodeFilter.SHOW_TEXT,
+            null
+          );
+
+          let node: Node | null;
+          while ((node = walker.nextNode())) {
+            const textLength = node.textContent?.length || 0;
+            if (currentOffset + textLength >= targetOffset) {
+              range.setStart(node, targetOffset - currentOffset);
+              range.collapse(true);
+              found = true;
+              break;
+            }
+            currentOffset += textLength;
+          }
+
+          if (!found) {
+            // If we couldn't find the position, go to end
+            if (contentRef.lastChild) {
+              range.setStartAfter(contentRef.lastChild);
+            } else {
+              range.setStart(contentRef, 0);
+            }
+            range.collapse(true);
+          }
         }
-        range.collapse(true);
-      } else if (typeof req.position === 'number') {
-        if (textNode && textNode.textContent) {
-          const offset = Math.min(req.position, textNode.textContent.length);
-          range.setStart(textNode, offset);
-        } else {
-          range.setStart(contentRef, 0);
-        }
-        range.collapse(true);
+
+        selection.removeAllRanges();
+        selection.addRange(range);
+      } catch (e) {
+        console.error('Error setting cursor position:', e);
       }
 
-      selection?.removeAllRanges();
-      selection?.addRange(range);
       props.onFocusHandled();
     }
   });
@@ -87,32 +126,172 @@ export const Block: Component<BlockProps> = (props) => {
     return preRange.toString().length;
   };
 
+  const getInnerHTML = (): string => {
+    return contentRef?.innerHTML || '';
+  };
+
+  const getTextContent = (): string => {
+    return contentRef?.textContent || '';
+  };
+
   const handleInput = (e: InputEvent) => {
-    const target = e.currentTarget as HTMLDivElement;
-    outlineStore.updateBlockContent(props.block.id, target.textContent || '');
+    const html = getInnerHTML();
+    outlineStore.updateBlockContent(props.block.id, html);
+  };
+
+  const applyFormatting = (command: string) => {
+    document.execCommand(command, false);
+    contentRef?.focus();
+  };
+
+  const insertLink = () => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+
+    const selectedText = selection.toString();
+    if (!selectedText) {
+      alert('Please select some text first to create a link.');
+      return;
+    }
+
+    setShowLinkModal(true);
+  };
+
+  const confirmLink = () => {
+    const url = linkUrl();
+    if (!url) return;
+
+    document.execCommand('createLink', false, url);
+    setShowLinkModal(false);
+    setLinkUrl('');
+    contentRef?.focus();
+
+    // Update store with new HTML
+    const html = getInnerHTML();
+    outlineStore.updateBlockContent(props.block.id, html);
   };
 
   const handleKeyDown = (e: KeyboardEvent) => {
+    // Ctrl+;: toggle collapse
+    if (e.key === ';' && e.ctrlKey && !e.metaKey && !e.shiftKey) {
+      e.preventDefault();
+      if (hasChildren()) {
+        outlineStore.toggleCollapsed(props.block.id);
+      }
+      return;
+    }
+
+    // Cmd+.: zoom into block
+    if (e.key === '.' && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+      e.preventDefault();
+      const focusId = outlineStore.zoomIn(props.block.id);
+      if (focusId) {
+        // Focus will be handled by Outline component after re-render
+        requestAnimationFrame(() => {
+          window.dispatchEvent(new CustomEvent('outline-focus', {
+            detail: { id: focusId, position: 'start' }
+          }));
+        });
+      }
+      return;
+    }
+
+    // Cmd+,: zoom out
+    if (e.key === ',' && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+      e.preventDefault();
+      const focusId = outlineStore.zoomOut();
+      if (focusId) {
+        requestAnimationFrame(() => {
+          window.dispatchEvent(new CustomEvent('outline-focus', {
+            detail: { id: focusId, position: 'start' }
+          }));
+        });
+      }
+      return;
+    }
+
+    // Cmd+Enter: cycle checkbox state
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+      e.preventDefault();
+      outlineStore.cycleCheckboxState(props.block.id);
+      return;
+    }
+
+    // Bold: Cmd+B
+    if (e.key === 'b' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      applyFormatting('bold');
+      return;
+    }
+
+    // Italic: Cmd+I
+    if (e.key === 'i' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      applyFormatting('italic');
+      return;
+    }
+
+    // Underline: Cmd+U
+    if (e.key === 'u' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      applyFormatting('underline');
+      return;
+    }
+
+    // Strikethrough: Cmd+Shift+X
+    if (e.key === 'x' && (e.metaKey || e.ctrlKey) && e.shiftKey) {
+      e.preventDefault();
+      applyFormatting('strikeThrough');
+      return;
+    }
+
+    // Link: Cmd+K
+    if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      insertLink();
+      return;
+    }
+
     const cursorPos = getCursorPosition();
-    // Use DOM content, not store content, since contentEditable is managed imperatively
-    const content = contentRef?.textContent || '';
+    const textContent = getTextContent();
+    const htmlContent = getInnerHTML();
 
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
 
-      // Split content at cursor
-      const beforeCursor = content.slice(0, cursorPos);
-      const afterCursor = content.slice(cursorPos);
+      // Get HTML before and after cursor
+      const selection = window.getSelection();
+      if (!selection || !contentRef) return;
+
+      const range = selection.getRangeAt(0);
+
+      // Clone the content
+      const beforeRange = document.createRange();
+      beforeRange.selectNodeContents(contentRef);
+      beforeRange.setEnd(range.startContainer, range.startOffset);
+
+      const afterRange = document.createRange();
+      afterRange.selectNodeContents(contentRef);
+      afterRange.setStart(range.startContainer, range.startOffset);
+
+      // Create temporary containers to get HTML
+      const beforeContainer = document.createElement('div');
+      beforeContainer.appendChild(beforeRange.cloneContents());
+      const beforeHTML = beforeContainer.innerHTML;
+
+      const afterContainer = document.createElement('div');
+      afterContainer.appendChild(afterRange.cloneContents());
+      const afterHTML = afterContainer.innerHTML;
 
       // Update current block with content before cursor
-      outlineStore.updateBlockContent(props.block.id, beforeCursor);
+      outlineStore.updateBlockContent(props.block.id, beforeHTML);
       // Sync the DOM immediately
       if (contentRef) {
-        contentRef.textContent = beforeCursor;
+        contentRef.innerHTML = beforeHTML;
       }
 
       // Create new block with content after cursor
-      const newId = outlineStore.insertBlockAsSibling(props.block.id, afterCursor);
+      const newId = outlineStore.insertBlockAsSibling(props.block.id, afterHTML);
 
       // Dispatch focus request for new block
       window.dispatchEvent(new CustomEvent('outline-focus', {
@@ -123,7 +302,7 @@ export const Block: Component<BlockProps> = (props) => {
     if (e.key === 'Backspace' && cursorPos === 0 && !e.shiftKey) {
       e.preventDefault();
 
-      if (content === '' && hasChildren()) {
+      if (textContent === '' && hasChildren()) {
         // Don't merge if block has children and is empty - just prevent
         return;
       }
@@ -162,8 +341,11 @@ export const Block: Component<BlockProps> = (props) => {
         const prevBlock = outlineStore.getPreviousBlock(props.block.id);
         if (prevBlock) {
           // Try to maintain horizontal position, clamped to the previous block's length
-          const prevContent = prevBlock.block.content;
-          const targetPos = Math.min(cursorPos, prevContent.length);
+          // Create a temporary div to get text length from HTML content
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = prevBlock.block.content;
+          const prevLength = tempDiv.textContent?.length || 0;
+          const targetPos = Math.min(cursorPos, prevLength);
           window.dispatchEvent(new CustomEvent('outline-focus', {
             detail: { id: prevBlock.block.id, position: targetPos }
           }));
@@ -178,8 +360,11 @@ export const Block: Component<BlockProps> = (props) => {
         const nextBlock = outlineStore.getNextBlock(props.block.id);
         if (nextBlock) {
           // Try to maintain horizontal position, clamped to the next block's length
-          const nextContent = nextBlock.block.content;
-          const targetPos = Math.min(cursorPos, nextContent.length);
+          // Create a temporary div to get text length from HTML content
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = nextBlock.block.content;
+          const nextLength = tempDiv.textContent?.length || 0;
+          const targetPos = Math.min(cursorPos, nextLength);
           window.dispatchEvent(new CustomEvent('outline-focus', {
             detail: { id: nextBlock.block.id, position: targetPos }
           }));
@@ -202,7 +387,7 @@ export const Block: Component<BlockProps> = (props) => {
 
     if (e.key === 'ArrowRight' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
       const selection = window.getSelection();
-      if (selection && selection.isCollapsed && cursorPos === content.length) {
+      if (selection && selection.isCollapsed && cursorPos === textContent.length) {
         e.preventDefault();
         const nextBlock = outlineStore.getNextBlock(props.block.id);
         if (nextBlock) {
@@ -218,6 +403,30 @@ export const Block: Component<BlockProps> = (props) => {
     e.preventDefault();
     e.stopPropagation();
     outlineStore.toggleCollapsed(props.block.id);
+  };
+
+  const handleCheckboxClick = (e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    outlineStore.cycleCheckboxState(props.block.id);
+  };
+
+  const renderCheckbox = () => {
+    const state = props.block.checkboxState;
+    if (state === 'none') return null;
+
+    return (
+      <div
+        class="w-4 h-4 flex items-center justify-center flex-shrink-0 cursor-pointer border-2 border-gray-400 rounded mr-2 hover:border-gray-600"
+        onClick={handleCheckboxClick}
+      >
+        <Show when={state === 'checked'}>
+          <svg class="w-3 h-3 text-gray-700" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M2 6L5 9L10 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </Show>
+      </div>
+    );
   };
 
   return (
@@ -242,6 +451,9 @@ export const Block: Component<BlockProps> = (props) => {
           </Show>
         </div>
 
+        {/* Checkbox (if enabled) */}
+        {renderCheckbox()}
+
         {/* Content */}
         <div
           ref={contentRef}
@@ -250,8 +462,51 @@ export const Block: Component<BlockProps> = (props) => {
           onInput={handleInput}
           onKeyDown={handleKeyDown}
         />
-        {/* Content is managed imperatively via textContent to avoid SolidJS reactivity issues */}
       </div>
+
+      {/* Link Modal */}
+      <Show when={showLinkModal()}>
+        <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div class="bg-white rounded-lg p-6 shadow-xl max-w-md w-full">
+            <h3 class="text-lg font-semibold mb-4">Insert Link</h3>
+            <input
+              type="text"
+              placeholder="https://example.com"
+              class="w-full border border-gray-300 rounded px-3 py-2 mb-4 outline-none focus:border-blue-500"
+              value={linkUrl()}
+              onInput={(e) => setLinkUrl(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  confirmLink();
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setShowLinkModal(false);
+                  setLinkUrl('');
+                }
+              }}
+            />
+            <div class="flex justify-end gap-2">
+              <button
+                class="px-4 py-2 text-gray-600 hover:text-gray-800"
+                onClick={() => {
+                  setShowLinkModal(false);
+                  setLinkUrl('');
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                onClick={confirmLink}
+              >
+                Insert
+              </button>
+            </div>
+          </div>
+        </div>
+      </Show>
 
       {/* Children */}
       <Show when={hasChildren() && !isCollapsed()}>
