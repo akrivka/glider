@@ -30,6 +30,8 @@ services:
       - SURREALDB_URL=ws://surrealdb:8000
       - SURREALDB_USER=root
       - SURREALDB_PASS=root
+    volumes:
+      - ./glider-backend/secrets:/app/secrets:ro
     command: ["python", "-m", "glider.entrypoint_worker"]
     depends_on:
       temporal:

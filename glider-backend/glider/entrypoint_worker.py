@@ -7,6 +7,12 @@ from temporalio.worker import Worker
 from glider.config import settings
 from glider.workflows.activities import sleep_activity, store_in_surrealdb
 from glider.workflows.demo import DemoWorkflow
+from glider.workflows.google_calendar import (
+    GoogleCalendarSyncWorkflow,
+    fetch_google_calendar_events,
+    save_sync_state,
+    store_calendar_events,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -22,8 +28,14 @@ async def main():
     worker = Worker(
         client,
         task_queue=settings.temporal_task_queue,
-        workflows=[DemoWorkflow],
-        activities=[sleep_activity, store_in_surrealdb],
+        workflows=[DemoWorkflow, GoogleCalendarSyncWorkflow],
+        activities=[
+            sleep_activity,
+            store_in_surrealdb,
+            fetch_google_calendar_events,
+            store_calendar_events,
+            save_sync_state,
+        ],
     )
 
     await worker.run()
