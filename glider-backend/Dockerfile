@@ -29,4 +29,4 @@ COPY --from=frontend-builder /frontend/dist ./static
 ENV PATH="/app/.venv/bin:$PATH"
 
 # Default command (can be overridden in docker-compose)
-CMD ["python", "-m", "uvicorn", "glider.api_entrypoint:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "uvicorn", "glider.entrypoint_api:app", "--host", "0.0.0.0", "--port", "8000"]
