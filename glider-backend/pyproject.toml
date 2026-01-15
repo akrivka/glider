@@ -1,12 +1,15 @@
 [project]
 name = "glider-backend"
 version = "0.1.0"
-description = "Add your description here"
+description = "Glider Backend API and Workers"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
+    "temporalio>=1.7.0",
+    "pydantic-settings>=2.0.0",
+    "surrealdb>=0.3.0",
 ]
 
 [dependency-groups]
