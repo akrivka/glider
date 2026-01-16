@@ -13,6 +13,13 @@ from glider.workflows.google_calendar import (
     save_sync_state,
     store_calendar_events,
 )
+from glider.workflows.spotify import (
+    SpotifyListeningWorkflow,
+    load_tracking_state,
+    poll_spotify_playback,
+    record_listening_event,
+    save_tracking_state,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -28,13 +35,18 @@ async def main():
     worker = Worker(
         client,
         task_queue=settings.temporal_task_queue,
-        workflows=[DemoWorkflow, GoogleCalendarSyncWorkflow],
+        workflows=[DemoWorkflow, GoogleCalendarSyncWorkflow, SpotifyListeningWorkflow],
         activities=[
             sleep_activity,
             store_in_surrealdb,
             fetch_google_calendar_events,
             store_calendar_events,
             save_sync_state,
+            # Spotify activities
+            poll_spotify_playback,
+            load_tracking_state,
+            save_tracking_state,
+            record_listening_event,
         ],
     )
 
