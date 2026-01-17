@@ -193,116 +193,127 @@
 	</header>
 
 	<!-- Calendar Grid -->
-	<div class="flex flex-1 overflow-hidden">
-		<!-- Time Column -->
-		<div class="w-16 flex-shrink-0 border-r border-slate-800 bg-slate-900/50">
-			<!-- All-day header spacer -->
-			{#if allDayEvents.length > 0}
-				<div class="h-8 border-b border-slate-800"></div>
-			{/if}
-			<!-- Day headers spacer -->
-			<div class="h-14 border-b border-slate-800"></div>
-			<!-- Hour labels -->
-			<div class="relative">
-				{#each HOURS as hour}
-					<div class="relative flex items-start justify-end pr-2" style="height: {HOUR_HEIGHT}px">
-						<span class="relative -top-2 text-xs text-slate-500">
-							{hour.toString().padStart(2, '0')}:00
-						</span>
+	<div class="flex flex-1 flex-col overflow-hidden">
+		<!-- Fixed header area with all-day events and day names -->
+		<div class="flex flex-shrink-0">
+			<!-- Time column header spacer -->
+			<div class="w-16 flex-shrink-0 border-r border-slate-800 bg-slate-900/50">
+				{#if allDayEvents.length > 0}
+					<div class="h-8 border-b border-slate-800"></div>
+				{/if}
+				<div class="h-14 border-b border-slate-800"></div>
+			</div>
+
+			<!-- Day headers -->
+			<div class="flex flex-1 overflow-x-auto">
+				{#each weekDays as day}
+					<div class="flex min-w-[120px] flex-1 flex-col border-r border-slate-800/50 last:border-r-0">
+						<!-- All-day events row -->
+						{#if allDayEvents.length > 0}
+							<div class="relative h-8 border-b border-slate-800 bg-slate-900/30">
+								{#each getEventsForDay(allDayEvents, day.date) as event}
+									<div
+										class="absolute inset-x-1 top-1 truncate rounded px-1 text-xs font-medium text-white {event.color}"
+										style="height: 22px; line-height: 22px;"
+										title={event.summary}
+									>
+										{event.summary}
+									</div>
+								{/each}
+							</div>
+						{/if}
+
+						<!-- Day header -->
+						<div
+							class="flex h-14 flex-col items-center justify-center border-b border-slate-800 {day.isToday
+								? 'bg-cyan-500/10'
+								: 'bg-slate-900/30'}"
+						>
+							<span class="text-xs font-medium uppercase tracking-wider text-slate-500">
+								{day.dayName}
+							</span>
+							<span
+								class="mt-0.5 flex h-8 w-8 items-center justify-center rounded-full text-lg font-semibold {day.isToday
+									? 'bg-cyan-500 text-white'
+									: 'text-slate-200'}"
+							>
+								{day.dayNumber}
+							</span>
+						</div>
 					</div>
 				{/each}
 			</div>
 		</div>
 
-		<!-- Days Grid -->
-		<div class="flex flex-1 overflow-x-auto">
-			{#each weekDays as day, dayIndex}
-				<div class="flex min-w-[120px] flex-1 flex-col border-r border-slate-800/50 last:border-r-0">
-					<!-- All-day events row -->
-					{#if allDayEvents.length > 0}
-						<div class="relative h-8 border-b border-slate-800 bg-slate-900/30">
-							{#each getEventsForDay(allDayEvents, day.date) as event}
+		<!-- Scrollable area with time labels and day columns -->
+		<div class="flex flex-1 overflow-y-auto">
+			<!-- Time Column -->
+			<div class="w-16 flex-shrink-0 border-r border-slate-800 bg-slate-900/50">
+				<div class="relative" style="height: {HOURS.length * HOUR_HEIGHT}px">
+					{#each HOURS as hour}
+						<div class="relative flex items-start justify-end pr-2" style="height: {HOUR_HEIGHT}px">
+							<span class="relative -top-2 text-xs text-slate-500">
+								{hour.toString().padStart(2, '0')}:00
+							</span>
+						</div>
+					{/each}
+				</div>
+			</div>
+
+			<!-- Days Grid -->
+			<div class="flex flex-1 overflow-x-auto">
+				{#each weekDays as day}
+					<div class="flex min-w-[120px] flex-1 flex-col border-r border-slate-800/50 last:border-r-0">
+						<!-- Hours grid with events -->
+						<div class="relative" style="height: {HOURS.length * HOUR_HEIGHT}px">
+							<!-- Hour lines -->
+							{#each HOURS as hour, hourIndex}
 								<div
-									class="absolute inset-x-1 top-1 truncate rounded px-1 text-xs font-medium text-white {event.color}"
-									style="height: 22px; line-height: 22px;"
-									title={event.summary}
+									class="absolute left-0 right-0 border-t border-slate-800/50 {hourIndex === 0
+										? 'border-transparent'
+										: ''}"
+									style="top: {hourIndex * HOUR_HEIGHT}px; height: {HOUR_HEIGHT}px;"
+								></div>
+							{/each}
+
+							<!-- Events -->
+							{#each getEventsForDay(timedEvents, day.date) as event}
+								<div
+									class="absolute overflow-hidden rounded-md border-l-2 text-xs shadow-lg transition-transform hover:scale-[1.02] {event.color}"
+									style={getEventStyle(event, day.date)}
+									title="{event.summary}{event.location ? ` • ${event.location}` : ''}"
 								>
-									{event.summary}
+									<div class="flex h-full flex-col p-1.5">
+										<span class="truncate font-medium text-white">{event.summary}</span>
+										<span class="text-white/70">
+											{formatTime(event.startTime)} - {formatTime(event.endTime)}
+										</span>
+										{#if event.location}
+											<span class="mt-0.5 truncate text-white/60">{event.location}</span>
+										{/if}
+									</div>
 								</div>
 							{/each}
-						</div>
-					{/if}
 
-					<!-- Day header -->
-					<div
-						class="flex h-14 flex-col items-center justify-center border-b border-slate-800 {day.isToday
-							? 'bg-cyan-500/10'
-							: 'bg-slate-900/30'}"
-					>
-						<span class="text-xs font-medium uppercase tracking-wider text-slate-500">
-							{day.dayName}
-						</span>
-						<span
-							class="mt-0.5 flex h-8 w-8 items-center justify-center rounded-full text-lg font-semibold {day.isToday
-								? 'bg-cyan-500 text-white'
-								: 'text-slate-200'}"
-						>
-							{day.dayNumber}
-						</span>
-					</div>
-
-					<!-- Hours grid with events -->
-					<div
-						class="relative flex-1 overflow-y-auto"
-						style="height: {HOURS.length * HOUR_HEIGHT}px"
-					>
-						<!-- Hour lines -->
-						{#each HOURS as hour, hourIndex}
-							<div
-								class="absolute left-0 right-0 border-t border-slate-800/50 {hourIndex === 0
-									? 'border-transparent'
-									: ''}"
-								style="top: {hourIndex * HOUR_HEIGHT}px; height: {HOUR_HEIGHT}px;"
-							></div>
-						{/each}
-
-						<!-- Events -->
-						{#each getEventsForDay(timedEvents, day.date) as event}
-							<div
-								class="absolute overflow-hidden rounded-md border-l-2 text-xs shadow-lg transition-transform hover:scale-[1.02] {event.color}"
-								style={getEventStyle(event, day.date)}
-								title="{event.summary}{event.location ? ` • ${event.location}` : ''}"
-							>
-								<div class="flex h-full flex-col p-1.5">
-									<span class="truncate font-medium text-white">{event.summary}</span>
-									<span class="text-white/70">
-										{formatTime(event.startTime)} - {formatTime(event.endTime)}
-									</span>
-									{#if event.location}
-										<span class="mt-0.5 truncate text-white/60">{event.location}</span>
-									{/if}
-								</div>
-							</div>
-						{/each}
-
-						<!-- Current time indicator -->
-						{#if day.isToday}
-							{@const now = new Date()}
-							{@const nowMinutes =
-								(now.getHours() - DAY_START_HOUR) * 60 + now.getMinutes()}
-							{#if nowMinutes >= 0 && nowMinutes < (DAY_END_HOUR - DAY_START_HOUR) * 60}
-								<div
-									class="absolute left-0 right-0 z-10 flex items-center"
-									style="top: {(nowMinutes / 60) * HOUR_HEIGHT}px"
-								>
-									<div class="h-2.5 w-2.5 rounded-full bg-red-500"></div>
-									<div class="h-0.5 flex-1 bg-red-500"></div>
-								</div>
+							<!-- Current time indicator -->
+							{#if day.isToday}
+								{@const now = new Date()}
+								{@const nowMinutes =
+									(now.getHours() - DAY_START_HOUR) * 60 + now.getMinutes()}
+								{#if nowMinutes >= 0 && nowMinutes < (DAY_END_HOUR - DAY_START_HOUR) * 60}
+									<div
+										class="absolute left-0 right-0 z-10 flex items-center"
+										style="top: {(nowMinutes / 60) * HOUR_HEIGHT}px"
+									>
+										<div class="h-2.5 w-2.5 rounded-full bg-red-500"></div>
+										<div class="h-0.5 flex-1 bg-red-500"></div>
+									</div>
+								{/if}
 							{/if}
-						{/if}
+						</div>
 					</div>
-				</div>
-			{/each}
+				{/each}
+			</div>
 		</div>
 	</div>
 </div>
