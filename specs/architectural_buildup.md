@@ -2,7 +2,7 @@
 
 There will be two main first-party components:
 * glider-backend - written in Python, it will contain both the API and the workers
-* glider-frontend - written in TypeScript and SolidJS, only client-side rendering
+* glider-frontend - written in TypeScript and SvelteKit
 
 Additionally, we'll use two other important technologies:
 * SurrealDB - everything database

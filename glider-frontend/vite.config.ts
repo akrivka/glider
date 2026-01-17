@@ -1,20 +1,24 @@
 import tailwindcss from '@tailwindcss/vite';
-import { defineConfig } from 'vite';
-import solidPlugin from 'vite-plugin-solid';
-import devtools from 'solid-devtools/vite';
+import { defineConfig } from 'vitest/config';
+import { sveltekit } from '@sveltejs/kit/vite';
 
 export default defineConfig({
-  plugins: [devtools(), solidPlugin(), tailwindcss()],
-  server: {
-    port: 3000,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-    },
-  },
-  build: {
-    target: 'esnext',
-  },
+	plugins: [tailwindcss(), sveltekit()],
+
+	test: {
+		expect: { requireAssertions: true },
+
+		projects: [
+			{
+				extends: './vite.config.ts',
+
+				test: {
+					name: 'server',
+					environment: 'node',
+					include: ['src/**/*.{test,spec}.{js,ts}'],
+					exclude: ['src/**/*.svelte.{test,spec}.{js,ts}']
+				}
+			}
+		]
+	}
 });

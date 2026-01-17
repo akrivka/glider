@@ -99,9 +99,9 @@ services:
       - surrealdb
 
   # SvelteKit Frontend (direct DB/Temporal access)
-  glider-frontend2:
+  glider-frontend:
     build:
-      context: ./glider-frontend2
+      context: ./glider-frontend
       dockerfile: Dockerfile
     ports:
       - "5173:5173"

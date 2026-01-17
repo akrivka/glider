@@ -19,7 +19,7 @@ Another goal of Glider is to be a sort of self-surveillance tool. First, you con
 
 ## Architecture
 
-The frontend uses SolidJS and the backend is written in Python. This is mostly due to which technologies I'm familiar with.
+The frontend uses SvelteKit and the backend is written in Python. This is mostly due to which technologies I'm familiar with.
 
 ## Inspiration
 
