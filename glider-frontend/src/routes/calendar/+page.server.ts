@@ -1,5 +1,5 @@
 import { withDb } from '$lib/server/surrealdb';
-import type { CalendarEvent } from '$lib/types/calendar';
+import type { CalendarEvent, SpotifyListeningEvent } from '$lib/types/calendar';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ url }) => {
@@ -20,16 +20,20 @@ export const load: PageServerLoad = async ({ url }) => {
 	weekEnd.setDate(weekStart.getDate() + 7);
 	weekEnd.setHours(23, 59, 59, 999);
 
-	const events = await withDb(async (db) => {
-		// Query events that overlap with our week
-		// Events where start < weekEnd AND end > weekStart
-		const result = await db.query<[CalendarEvent[]]>(
-			`SELECT * FROM google_calendar_events 
+	// Fetch both calendar events and Spotify listening history
+	const [events, listeningHistory] = await withDb(async (db) => {
+		const eventsResult = await db.query<[CalendarEvent[]]>(
+			`SELECT * FROM google_calendar_events
 			 WHERE status != 'cancelled'
 			 ORDER BY start.dateTime ASC, start.date ASC`
 		);
 
-		return result[0] || [];
+		const listeningResult = await db.query<[SpotifyListeningEvent[]]>(
+			`SELECT * FROM spotify_listening_history
+			 ORDER BY listened_at ASC`
+		);
+
+		return [eventsResult[0] || [], listeningResult[0] || []];
 	});
 
 	// Filter events that fall within the week (SurrealDB query can't easily compare nested date fields)
@@ -55,8 +59,31 @@ export const load: PageServerLoad = async ({ url }) => {
 			updated: event.updated
 		}));
 
+	// Filter listening history for the week
+	const filteredListening = listeningHistory
+		.filter((event) => {
+			const listenedAt = new Date(event.listened_at);
+			return listenedAt >= weekStart && listenedAt <= weekEnd;
+		})
+		.map((event) => ({
+			id: String(event.id),
+			spotify_track_id: event.spotify_track_id,
+			track_name: event.track_name,
+			artist_names: event.artist_names || [],
+			artist_ids: event.artist_ids || [],
+			album_name: event.album_name,
+			album_id: event.album_id,
+			duration_ms: event.duration_ms,
+			listened_at: event.listened_at,
+			progress_reached_ms: event.progress_reached_ms,
+			percentage_listened: event.percentage_listened,
+			explicit: event.explicit,
+			popularity: event.popularity
+		}));
+
 	return {
 		events: filteredEvents,
+		listeningHistory: filteredListening,
 		weekStart: weekStart.toISOString(),
 		weekEnd: weekEnd.toISOString(),
 		weekOffset
