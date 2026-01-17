@@ -6,6 +6,15 @@
 		SpotifyListeningEvent,
 		ProcessedListeningSegment
 	} from '$lib/types/calendar';
+	import {
+		EVENT_COLORS,
+		MONTH_NAMES,
+		getEventDate,
+		processEvents,
+		processListeningHistory,
+		formatTime,
+		formatDuration
+	} from '$lib/utils/calendar';
 
 	let { data }: { data: PageData } = $props();
 
@@ -15,121 +24,9 @@
 	const HOURS = Array.from({ length: DAY_END_HOUR - DAY_START_HOUR }, (_, i) => i + DAY_START_HOUR);
 
 	const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-	const MONTH_NAMES = [
-		'January',
-		'February',
-		'March',
-		'April',
-		'May',
-		'June',
-		'July',
-		'August',
-		'September',
-		'October',
-		'November',
-		'December'
-	];
-
-	// Color palette for events
-	const EVENT_COLORS = [
-		'bg-blue-500/90 border-blue-600',
-		'bg-emerald-500/90 border-emerald-600',
-		'bg-violet-500/90 border-violet-600',
-		'bg-amber-500/90 border-amber-600',
-		'bg-rose-500/90 border-rose-600',
-		'bg-cyan-500/90 border-cyan-600',
-		'bg-fuchsia-500/90 border-fuchsia-600'
-	];
-
-	// Gap between listening segments to merge (in minutes)
-	const SEGMENT_GAP_THRESHOLD = 10;
 
 	let hoveredSegment: ProcessedListeningSegment | null = $state(null);
 	let tooltipPosition = $state({ x: 0, y: 0 });
-
-	function getEventDate(time: { dateTime?: string; date?: string }): Date {
-		if (time.dateTime) {
-			return new Date(time.dateTime);
-		}
-		if (time.date) {
-			return new Date(time.date + 'T00:00:00');
-		}
-		return new Date();
-	}
-
-	function processEvents(events: CalendarEvent[]): ProcessedEvent[] {
-		return events.map((event, index) => ({
-			id: event.google_id,
-			summary: event.summary || '(No title)',
-			startTime: getEventDate(event.start),
-			endTime: getEventDate(event.end),
-			isAllDay: !event.start.dateTime,
-			color: EVENT_COLORS[index % EVENT_COLORS.length],
-			htmlLink: event.html_link,
-			location: event.location
-		}));
-	}
-
-	function processListeningHistory(history: SpotifyListeningEvent[]): ProcessedListeningSegment[] {
-		if (history.length === 0) return [];
-
-		// Sort by listened_at
-		const sorted = [...history].sort(
-			(a, b) => new Date(a.listened_at).getTime() - new Date(b.listened_at).getTime()
-		);
-
-		const segments: ProcessedListeningSegment[] = [];
-		let currentSegment: ProcessedListeningSegment | null = null;
-
-		for (const event of sorted) {
-			const listenedAt = new Date(event.listened_at);
-			// Estimate end time based on progress reached
-			const estimatedEndTime = new Date(listenedAt.getTime() + event.progress_reached_ms);
-
-			const track = {
-				trackName: event.track_name,
-				artistNames: event.artist_names,
-				albumName: event.album_name,
-				listenedAt: listenedAt,
-				durationMs: event.duration_ms,
-				progressReachedMs: event.progress_reached_ms
-			};
-
-			if (!currentSegment) {
-				// Start new segment
-				currentSegment = {
-					startTime: listenedAt,
-					endTime: estimatedEndTime,
-					tracks: [track]
-				};
-			} else {
-				// Check if this track is close enough to merge
-				const gapMs = listenedAt.getTime() - currentSegment.endTime.getTime();
-				const gapMinutes = gapMs / (1000 * 60);
-
-				if (gapMinutes <= SEGMENT_GAP_THRESHOLD) {
-					// Merge into current segment
-					currentSegment.endTime = estimatedEndTime;
-					currentSegment.tracks.push(track);
-				} else {
-					// Save current segment and start new one
-					segments.push(currentSegment);
-					currentSegment = {
-						startTime: listenedAt,
-						endTime: estimatedEndTime,
-						tracks: [track]
-					};
-				}
-			}
-		}
-
-		// Don't forget the last segment
-		if (currentSegment) {
-			segments.push(currentSegment);
-		}
-
-		return segments;
-	}
 
 	function getEventStyle(event: ProcessedEvent, dayStart: Date): string {
 		if (event.isAllDay) {
@@ -168,16 +65,6 @@
 		const height = Math.max(((endMinutes - startMinutes) / 60) * HOUR_HEIGHT, 16);
 
 		return `top: ${top}px; height: ${height}px;`;
-	}
-
-	function formatTime(date: Date): string {
-		return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-	}
-
-	function formatDuration(ms: number): string {
-		const minutes = Math.floor(ms / 60000);
-		const seconds = Math.floor((ms % 60000) / 1000);
-		return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 	}
 
 	function formatDateHeader(dateISO: string): string {
