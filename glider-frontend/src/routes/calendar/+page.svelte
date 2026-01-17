@@ -5,7 +5,9 @@
 		ProcessedEvent,
 		WeekDay,
 		SpotifyListeningEvent,
-		ProcessedListeningSegment
+		ProcessedListeningSegment,
+		OuraHeartrateSample,
+		ProcessedHeartrateSample
 	} from '$lib/types/calendar';
 	import {
 		EVENT_COLORS,
@@ -26,11 +28,20 @@
 
 	const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+	// Heart rate range for color gradient (typical resting to active range)
+	const MIN_BPM = 50;
+	const MAX_BPM = 150;
+
 	let hoveredTrack: {
 		track: { trackName: string; artistNames: string[]; albumName: string };
 		position: { x: number; y: number };
 	} | null = $state(null);
 	let selectedSegment: ProcessedListeningSegment | null = $state(null);
+	let hoveredHeartrate: {
+		bpm: number;
+		time: string;
+		position: { x: number; y: number };
+	} | null = $state(null);
 
 	function getWeekDays(weekStartISO: string): WeekDay[] {
 		const weekStart = new Date(weekStartISO);
@@ -179,12 +190,92 @@
 		selectedSegment = segment;
 	}
 
+	// Process heartrate samples from raw data
+	function processHeartrateSamples(samples: OuraHeartrateSample[]): ProcessedHeartrateSample[] {
+		return samples.map((sample) => ({
+			timestamp: new Date(sample.timestamp),
+			bpm: sample.bpm,
+			source: sample.source
+		}));
+	}
+
+	// Get heartrate samples for a specific day
+	function getHeartrateForDay(samples: ProcessedHeartrateSample[], day: Date): ProcessedHeartrateSample[] {
+		const dayStart = new Date(day);
+		dayStart.setHours(0, 0, 0, 0);
+		const dayEnd = new Date(day);
+		dayEnd.setHours(23, 59, 59, 999);
+
+		return samples.filter((sample) => {
+			return sample.timestamp >= dayStart && sample.timestamp <= dayEnd;
+		});
+	}
+
+	// Get color for BPM value (gradient from light red to dark red)
+	function getBpmColor(bpm: number): string {
+		// Normalize BPM to 0-1 range
+		const normalized = Math.min(1, Math.max(0, (bpm - MIN_BPM) / (MAX_BPM - MIN_BPM)));
+		// Create gradient from light red (low BPM) to dark red (high BPM)
+		const opacity = 0.3 + normalized * 0.5; // 0.3 to 0.8 opacity
+		return `rgba(239, 68, 68, ${opacity})`; // red-500 with variable opacity
+	}
+
+	// Get Y position for a timestamp within the day
+	function getHeartrateYPosition(timestamp: Date, day: Date): number {
+		const dayStart = new Date(day);
+		dayStart.setHours(DAY_START_HOUR, 0, 0, 0);
+
+		const minutesFromStart = (timestamp.getTime() - dayStart.getTime()) / (1000 * 60);
+		const clampedMinutes = Math.max(0, Math.min((DAY_END_HOUR - DAY_START_HOUR) * 60, minutesFromStart));
+
+		return (clampedMinutes / 60) * HOUR_HEIGHT;
+	}
+
+	// Handle heartrate hover
+	function handleHeartrateHover(event: MouseEvent, samples: ProcessedHeartrateSample[], day: Date) {
+		const target = event.currentTarget as HTMLElement;
+		const rect = target.getBoundingClientRect();
+		const relativeY = event.clientY - rect.top;
+
+		const dayStart = new Date(day);
+		dayStart.setHours(DAY_START_HOUR, 0, 0, 0);
+
+		// Calculate time at cursor position
+		const timeAtCursor = new Date(dayStart.getTime() + (relativeY / HOUR_HEIGHT) * 60 * 60 * 1000);
+
+		// Find the closest sample to this time
+		let closestSample: ProcessedHeartrateSample | null = null;
+		let closestDistance = Infinity;
+
+		for (const sample of samples) {
+			const distance = Math.abs(sample.timestamp.getTime() - timeAtCursor.getTime());
+			if (distance < closestDistance) {
+				closestDistance = distance;
+				closestSample = sample;
+			}
+		}
+
+		// Only show tooltip if within 15 minutes of a sample
+		if (closestSample && closestDistance < 15 * 60 * 1000) {
+			hoveredHeartrate = {
+				bpm: closestSample.bpm,
+				time: formatTime(closestSample.timestamp),
+				position: { x: event.clientX, y: event.clientY }
+			};
+		} else {
+			hoveredHeartrate = null;
+		}
+	}
+
 	const weekDays = $derived(getWeekDays(data.weekStart));
 	const processedEvents = $derived(processEvents(data.events as CalendarEvent[]));
 	const allDayEvents = $derived(processedEvents.filter((e) => e.isAllDay));
 	const timedEvents = $derived(processedEvents.filter((e) => !e.isAllDay));
 	const listeningSegments = $derived(
 		processListeningHistory(data.listeningHistory as SpotifyListeningEvent[])
+	);
+	const heartrateSamples = $derived(
+		processHeartrateSamples((data.heartrateSamples || []) as OuraHeartrateSample[])
 	);
 </script>
 
@@ -391,6 +482,50 @@
 								></div>
 							{/each}
 						</div>
+
+						<!-- Oura Heartrate Column -->
+						{#if true}
+							{@const dayHeartrate = getHeartrateForDay(heartrateSamples, day.date)}
+							<div
+								class="relative w-8 flex-shrink-0 border-l border-slate-800/30 bg-slate-900/20"
+								style="height: {HOURS.length * HOUR_HEIGHT}px"
+								onmousemove={(e) => handleHeartrateHover(e, dayHeartrate, day.date)}
+								onmouseleave={() => (hoveredHeartrate = null)}
+								role="img"
+								aria-label="Heart rate data"
+							>
+								<!-- Heart icon at top -->
+								<div class="absolute top-0 left-0 right-0 flex justify-center pt-1">
+									<svg class="h-3 w-3 text-red-500/60" viewBox="0 0 24 24" fill="currentColor">
+										<path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+									</svg>
+								</div>
+
+								<!-- Heartrate samples as continuous line visualization -->
+								{#if dayHeartrate.length > 0}
+									<svg
+										class="absolute inset-0 overflow-visible"
+										style="top: 0; left: 0; width: 100%; height: 100%;"
+										preserveAspectRatio="none"
+									>
+										<!-- Draw vertical bars for each sample -->
+										{#each dayHeartrate as sample, i}
+											{@const y = getHeartrateYPosition(sample.timestamp, day.date)}
+											{@const nextSample = dayHeartrate[i + 1]}
+											{@const nextY = nextSample ? getHeartrateYPosition(nextSample.timestamp, day.date) : y + 2}
+											{@const height = Math.max(2, nextY - y)}
+											<rect
+												x="2"
+												y={y}
+												width="28"
+												height={height}
+												fill={getBpmColor(sample.bpm)}
+											/>
+										{/each}
+									</svg>
+								{/if}
+							</div>
+						{/if}
 					</div>
 				{/each}
 			</div>
@@ -416,6 +551,28 @@
 				</div>
 				<div class="max-w-xs truncate text-xs text-slate-400">
 					{hoveredTrack.track.artistNames.join(', ')}
+				</div>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Hover tooltip for heartrate info -->
+{#if hoveredHeartrate}
+	<div
+		class="pointer-events-none fixed z-50 rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 shadow-xl"
+		style="left: {hoveredHeartrate.position.x + 12}px; top: {hoveredHeartrate.position.y - 10}px;"
+	>
+		<div class="flex items-center gap-1.5">
+			<svg class="h-3 w-3 text-red-500" viewBox="0 0 24 24" fill="currentColor">
+				<path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+			</svg>
+			<div>
+				<div class="text-xs font-medium text-slate-200">
+					{hoveredHeartrate.bpm} BPM
+				</div>
+				<div class="text-xs text-slate-400">
+					{hoveredHeartrate.time}
 				</div>
 			</div>
 		</div>

@@ -1,9 +1,10 @@
 from pathlib import Path
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
     temporal_address: str = "localhost:7233"
     temporal_task_queue: str = "glider-tasks"
 
@@ -22,6 +23,13 @@ class Settings(BaseSettings):
     spotify_redirect_uri: str = "http://127.0.0.1:8091/callback"
     spotify_tokens_path: Path = Path("secrets/spotify_tokens.json")
     spotify_poll_interval_seconds: int = 7
+
+    # Oura OAuth settings
+    oura_client_id: str = ""
+    oura_client_secret: str = ""
+    oura_redirect_uri: str = "http://localhost:8092/callback"
+    oura_tokens_path: Path = Path("secrets/oura_tokens.json")
+    oura_sync_interval_minutes: int = 30
 
 
 settings = Settings()

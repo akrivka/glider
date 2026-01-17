@@ -20,6 +20,13 @@ from glider.workflows.spotify import (
     record_listening_event,
     save_tracking_state,
 )
+from glider.workflows.oura import (
+    OuraHeartrateSyncWorkflow,
+    fetch_oura_heartrate,
+    load_oura_sync_state,
+    save_oura_sync_state,
+    store_heartrate_samples,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -35,7 +42,7 @@ async def main():
     worker = Worker(
         client,
         task_queue=settings.temporal_task_queue,
-        workflows=[DemoWorkflow, GoogleCalendarSyncWorkflow, SpotifyListeningWorkflow],
+        workflows=[DemoWorkflow, GoogleCalendarSyncWorkflow, SpotifyListeningWorkflow, OuraHeartrateSyncWorkflow],
         activities=[
             sleep_activity,
             store_in_surrealdb,
@@ -47,6 +54,11 @@ async def main():
             load_tracking_state,
             save_tracking_state,
             record_listening_event,
+            # Oura activities
+            fetch_oura_heartrate,
+            load_oura_sync_state,
+            save_oura_sync_state,
+            store_heartrate_samples,
         ],
     )
 

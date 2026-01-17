@@ -67,3 +67,17 @@ export interface ProcessedListeningSegment {
 		progressReachedMs: number;
 	}[];
 }
+
+export interface OuraHeartrateSample {
+	id: string;
+	timestamp: string;
+	bpm: number;
+	source: string;
+	_synced_at?: string;
+}
+
+export interface ProcessedHeartrateSample {
+	timestamp: Date;
+	bpm: number;
+	source: string;
+}

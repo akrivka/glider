@@ -1,5 +1,5 @@
 import { withDb } from '$lib/server/surrealdb';
-import type { CalendarEvent, SpotifyListeningEvent } from '$lib/types/calendar';
+import type { CalendarEvent, SpotifyListeningEvent, OuraHeartrateSample } from '$lib/types/calendar';
 
 export function getEventDate(time: { dateTime?: string; date?: string }): Date {
 	if (time.dateTime) {
@@ -11,7 +11,7 @@ export function getEventDate(time: { dateTime?: string; date?: string }): Date {
 	return new Date();
 }
 
-export async function fetchEventsAndListening() {
+export async function fetchEventsAndListening(): Promise<[CalendarEvent[], SpotifyListeningEvent[], OuraHeartrateSample[]]> {
 	return await withDb(async (db) => {
 		const eventsResult = await db.query<[CalendarEvent[]]>(
 			`SELECT * FROM google_calendar_events
@@ -24,7 +24,12 @@ export async function fetchEventsAndListening() {
 			 ORDER BY listened_at ASC`
 		);
 
-		return [eventsResult[0] || [], listeningResult[0] || []];
+		const heartrateResult = await db.query<[OuraHeartrateSample[]]>(
+			`SELECT * FROM oura_heartrate
+			 ORDER BY timestamp ASC`
+		);
+
+		return [eventsResult[0] || [], listeningResult[0] || [], heartrateResult[0] || []] as [CalendarEvent[], SpotifyListeningEvent[], OuraHeartrateSample[]];
 	});
 }
 
@@ -79,5 +84,23 @@ export function filterAndSerializeListening(
 			percentage_listened: event.percentage_listened,
 			explicit: event.explicit,
 			popularity: event.popularity
+		}));
+}
+
+export function filterAndSerializeHeartrate(
+	heartrateSamples: OuraHeartrateSample[],
+	startDate: Date,
+	endDate: Date
+) {
+	return heartrateSamples
+		.filter((sample) => {
+			const timestamp = new Date(sample.timestamp);
+			return timestamp >= startDate && timestamp <= endDate;
+		})
+		.map((sample) => ({
+			id: String(sample.id),
+			timestamp: sample.timestamp,
+			bpm: sample.bpm,
+			source: sample.source
 		}));
 }
