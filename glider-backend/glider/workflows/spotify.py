@@ -351,9 +351,7 @@ class SpotifyListeningWorkflow:
                 state.current_track_id
                 and state.track_info
                 and not state.recorded
-                and meets_debounce_criteria(
-                    state, state.track_info.get("duration_ms", 0), workflow.logger.info
-                )
+                and meets_debounce_criteria(state, state.track_info.get("duration_ms", 0))
             ):
                 self._status = "recording"
                 event = _build_listening_event(state)

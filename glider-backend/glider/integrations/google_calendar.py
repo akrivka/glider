@@ -61,6 +61,8 @@ class GoogleCalendarClient:
         calendar_id: str = "primary",
         sync_token: str | None = None,
         time_min: datetime | None = None,
+        *,
+        _retried: bool = False,
     ) -> tuple[list[dict], str | None]:
         """
         Fetch events from Google Calendar.
@@ -69,6 +71,7 @@ class GoogleCalendarClient:
             calendar_id: Calendar ID to fetch from (default: "primary")
             sync_token: Token for incremental sync (from previous fetch)
             time_min: Minimum time bound for events (only for initial sync)
+            _retried: Internal flag to prevent infinite retry loops.
 
         Returns:
             Tuple of (events list, next sync token)
@@ -98,9 +101,11 @@ class GoogleCalendarClient:
             try:
                 result = service.events().list(**request_params).execute()
             except Exception as e:
-                # If sync token is invalid, clear it and do a full sync
-                if "Sync token" in str(e) and sync_token:
-                    return self.fetch_events(calendar_id=calendar_id, time_min=time_min)
+                # If sync token is invalid, clear it and do a full sync (but only once)
+                if "Sync token" in str(e) and sync_token and not _retried:
+                    return self.fetch_events(
+                        calendar_id=calendar_id, time_min=time_min, _retried=True
+                    )
                 raise
 
             events = result.get("items", [])

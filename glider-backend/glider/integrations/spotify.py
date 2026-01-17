@@ -106,9 +106,12 @@ class SpotifyClient:
         tokens = self._load_tokens()
         return tokens is not None
 
-    def get_currently_playing(self) -> dict | None:
+    def get_currently_playing(self, *, _retried: bool = False) -> dict | None:
         """
         Get the currently playing track.
+
+        Args:
+            _retried: Internal flag to prevent infinite retry loops.
 
         Returns:
             Dict with track info if playing, None if nothing playing.
@@ -126,10 +129,10 @@ class SpotifyClient:
             if response.status_code == 204:
                 return None
 
-            # 401 = token expired, try refresh once
-            if response.status_code == 401:
+            # 401 = token expired, try refresh once (but only once to prevent infinite loop)
+            if response.status_code == 401 and not _retried:
                 self._refresh_access_token()
-                return self.get_currently_playing()
+                return self.get_currently_playing(_retried=True)
 
             response.raise_for_status()
             return response.json()

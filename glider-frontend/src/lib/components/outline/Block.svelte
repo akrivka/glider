@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Block as BlockType } from '$lib/types/outline';
 	import { outlineStore, type BlockPath } from '$lib/stores/outlineStore.svelte';
+	import { sanitizeHtml, sanitizeUrl } from '$lib/utils/sanitize';
 	import Block from './Block.svelte';
 
 	interface Props {
@@ -24,7 +25,7 @@
 		if (contentRef && block.content !== undefined) {
 			// Only set content if the element is not focused (to avoid overwriting user edits)
 			if (document.activeElement !== contentRef) {
-				contentRef.innerHTML = block.content || '';
+				contentRef.innerHTML = sanitizeHtml(block.content || '');
 			}
 		}
 	});
@@ -34,8 +35,9 @@
 		const req = focusRequest;
 		if (req && req.id === block.id && contentRef) {
 			// Sync content before focusing (important for split/merge operations)
-			if (contentRef.innerHTML !== block.content) {
-				contentRef.innerHTML = block.content || '';
+			const sanitizedContent = sanitizeHtml(block.content || '');
+			if (contentRef.innerHTML !== sanitizedContent) {
+				contentRef.innerHTML = sanitizedContent;
 			}
 
 			contentRef.focus();
@@ -153,7 +155,14 @@
 		const url = linkUrl;
 		if (!url) return;
 
-		document.execCommand('createLink', false, url);
+		// Validate URL to prevent javascript: and other dangerous protocols
+		const safeUrl = sanitizeUrl(url);
+		if (!safeUrl) {
+			alert('Please enter a valid URL (http://, https://, or mailto:)');
+			return;
+		}
+
+		document.execCommand('createLink', false, safeUrl);
 		showLinkModal = false;
 		linkUrl = '';
 		contentRef?.focus();

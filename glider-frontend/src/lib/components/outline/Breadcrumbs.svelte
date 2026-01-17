@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
 	import { outlineStore, type BlockLocation } from '$lib/stores/outlineStore.svelte';
+	import { extractTextFromHtml } from '$lib/utils/sanitize';
 
 	let breadcrumbs = $derived(outlineStore.getBreadcrumbs());
 
@@ -18,15 +18,7 @@
 	}
 
 	function getBlockText(location: BlockLocation): string {
-		if (!browser) {
-			// During SSR, just strip HTML tags with regex
-			const text = location.block.content.replace(/<[^>]*>/g, '');
-			return text.length > 50 ? text.substring(0, 50) + '...' : text;
-		}
-		// Create a temporary div to extract text from HTML
-		const tempDiv = document.createElement('div');
-		tempDiv.innerHTML = location.block.content;
-		const text = tempDiv.textContent || '';
+		const text = extractTextFromHtml(location.block.content);
 		// Truncate if too long
 		return text.length > 50 ? text.substring(0, 50) + '...' : text;
 	}
