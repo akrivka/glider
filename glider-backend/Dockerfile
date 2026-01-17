@@ -17,4 +17,4 @@ COPY glider-backend/glider/ ./glider/
 ENV PATH="/app/.venv/bin:$PATH"
 
 # Default command (can be overridden in docker-compose)
-CMD ["python", "-m", "uvicorn", "glider.entrypoint_api:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "glider.entrypoint_worker"]

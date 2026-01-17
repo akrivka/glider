@@ -1,25 +1,4 @@
 services:
-  # Main API + Frontend service
-  glider-api:
-    build:
-      context: .
-      dockerfile: glider-backend/Dockerfile
-    ports:
-      - "8000:8000"
-    environment:
-      - TEMPORAL_ADDRESS=temporal:7233
-      - SURREALDB_URL=ws://surrealdb:8000
-      - SURREALDB_USER=root
-      - SURREALDB_PASS=root
-      - SURREALDB_NS=glider
-      - SURREALDB_DB=glider
-    command: ["python", "-m", "uvicorn", "glider.entrypoint_api:app", "--host", "0.0.0.0", "--port", "8000"]
-    depends_on:
-      temporal:
-        condition: service_healthy
-      surrealdb:
-        condition: service_started
-
   # Temporal Worker service (same image, different entrypoint)
   glider-worker:
     build:

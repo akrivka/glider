@@ -1,1 +1,0 @@
-# Glider API routes

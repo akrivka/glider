@@ -1,7 +1,7 @@
 [project]
 name = "glider-backend"
 version = "0.1.0"
-description = "Glider Backend API and Workers"
+description = "Glider Workers"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
