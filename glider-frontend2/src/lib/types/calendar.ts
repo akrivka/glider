@@ -37,3 +37,33 @@ export interface ProcessedEvent {
 	htmlLink?: string;
 	location?: string;
 }
+
+export interface SpotifyListeningEvent {
+	id: string;
+	spotify_track_id: string;
+	track_name: string;
+	artist_names: string[];
+	artist_ids: string[];
+	album_name: string;
+	album_id: string;
+	duration_ms: number;
+	listened_at: string;
+	progress_reached_ms: number;
+	percentage_listened: number;
+	explicit: boolean;
+	popularity: number;
+	_synced_at?: string;
+}
+
+export interface ProcessedListeningSegment {
+	startTime: Date;
+	endTime: Date;
+	tracks: {
+		trackName: string;
+		artistNames: string[];
+		albumName: string;
+		listenedAt: Date;
+		durationMs: number;
+		progressReachedMs: number;
+	}[];
+}

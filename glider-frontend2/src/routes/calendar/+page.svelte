@@ -178,9 +178,17 @@
 			</a>
 		</div>
 
-		<div class="text-right">
-			<p class="text-lg font-medium text-slate-200">{formatWeekRange(data.weekStart)}</p>
-			<p class="text-sm text-slate-500">Week view</p>
+		<div class="flex items-center gap-4">
+			<a
+				href="/daily"
+				class="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-400 transition-all hover:border-cyan-500/50 hover:bg-slate-800 hover:text-cyan-400"
+			>
+				Daily View
+			</a>
+			<div class="text-right">
+				<p class="text-lg font-medium text-slate-200">{formatWeekRange(data.weekStart)}</p>
+				<p class="text-sm text-slate-500">Week view</p>
+			</div>
 		</div>
 	</header>
 
