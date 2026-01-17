@@ -37,6 +37,26 @@ services:
       temporal:
         condition: service_healthy
 
+  # SvelteKit Frontend (direct DB/Temporal access)
+  glider-frontend:
+    build:
+      context: ./glider-frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - SURREALDB_URL=ws://surrealdb:8000
+      - SURREALDB_USER=root
+      - SURREALDB_PASS=root
+      - SURREALDB_NS=glider
+      - SURREALDB_DB=glider
+    depends_on:
+      temporal:
+        condition: service_healthy
+      surrealdb:
+        condition: service_started
+
   # Temporal Server
   temporal:
     image: temporalio/auto-setup:latest
@@ -97,26 +117,6 @@ services:
       - "8002:8080"
     depends_on:
       - surrealdb
-
-  # SvelteKit Frontend (direct DB/Temporal access)
-  glider-frontend:
-    build:
-      context: ./glider-frontend
-      dockerfile: Dockerfile
-    ports:
-      - "5173:5173"
-    environment:
-      - TEMPORAL_ADDRESS=temporal:7233
-      - SURREALDB_URL=ws://surrealdb:8000
-      - SURREALDB_USER=root
-      - SURREALDB_PASS=root
-      - SURREALDB_NS=glider
-      - SURREALDB_DB=glider
-    depends_on:
-      temporal:
-        condition: service_healthy
-      surrealdb:
-        condition: service_started
 
 volumes:
   temporal_postgres_data:

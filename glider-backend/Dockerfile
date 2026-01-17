@@ -1,12 +1,3 @@
-# Build context should be project root (.)
-# Build frontend
-FROM node:22-alpine AS frontend-builder
-WORKDIR /frontend
-COPY glider-frontend/package*.json ./
-RUN npm ci --legacy-peer-deps
-COPY glider-frontend/ ./
-RUN npm run build
-
 # Backend with uv
 FROM python:3.13-slim
 
@@ -21,9 +12,6 @@ RUN uv sync --frozen --no-dev
 
 # Copy backend code
 COPY glider-backend/glider/ ./glider/
-
-# Copy built frontend into static directory
-COPY --from=frontend-builder /frontend/dist ./static
 
 # Set Python path for uv environment
 ENV PATH="/app/.venv/bin:$PATH"
