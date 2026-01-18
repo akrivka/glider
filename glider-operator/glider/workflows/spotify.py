@@ -134,11 +134,11 @@ def _dict_to_state(data: dict | None) -> TrackingState:
 
 @activity.defn
 async def poll_spotify_playback() -> dict | None:
-    """Poll Spotify for current playback state."""
+    """Poll current Spotify playback state."""
     from glider.config import settings
     from glider.integrations.spotify import SpotifyClient
 
-    activity.logger.info("Polling Spotify playback state")
+    activity.logger.info("Polling Spotify playback")
 
     client = SpotifyClient(
         client_id=settings.spotify_client_id,
@@ -160,7 +160,7 @@ async def load_tracking_state() -> dict | None:
 
     db = AsyncSurreal(settings.surrealdb_url)
     try:
-        await db.connect()
+        await db.connect(settings.surrealdb_url)
         await db.signin({"username": settings.surrealdb_user, "password": settings.surrealdb_pass})
         await db.use(settings.surrealdb_ns, settings.surrealdb_db)
 
@@ -172,8 +172,8 @@ async def load_tracking_state() -> dict | None:
 
         if isinstance(result, dict):
             # Remove the 'id' field which contains a non-serializable RecordID
-            result.pop("id", None)
-            return result
+            # Rebuild dict without the 'id' field to avoid type issues
+            return {k: v for k, v in result.items() if k != "id"}
         return None
     finally:
         await db.close()
@@ -188,7 +188,7 @@ async def save_tracking_state(state: dict) -> None:
 
     db = AsyncSurreal(settings.surrealdb_url)
     try:
-        await db.connect()
+        await db.connect(settings.surrealdb_url)
         await db.signin({"username": settings.surrealdb_user, "password": settings.surrealdb_pass})
         await db.use(settings.surrealdb_ns, settings.surrealdb_db)
 
@@ -208,7 +208,7 @@ async def record_listening_event(event: dict) -> str:
 
     db = AsyncSurreal(settings.surrealdb_url)
     try:
-        await db.connect()
+        await db.connect(settings.surrealdb_url)
         await db.signin({"username": settings.surrealdb_user, "password": settings.surrealdb_pass})
         await db.use(settings.surrealdb_ns, settings.surrealdb_db)
 
@@ -235,21 +235,6 @@ async def record_listening_event(event: dict) -> str:
 
 
 # --- Workflow ---
-
-with workflow.unsafe.imports_passed_through():
-    from glider.workflows.spotify import (
-        DEBOUNCE_MIN_LISTEN_SECONDS,
-        TrackingState,
-        _build_listening_event,
-        _dict_to_state,
-        _extract_track_info,
-        _state_to_dict,
-        load_tracking_state,
-        meets_debounce_criteria,
-        poll_spotify_playback,
-        record_listening_event,
-        save_tracking_state,
-    )
 
 
 @workflow.defn

@@ -58,7 +58,7 @@ async def load_oura_sync_state() -> dict | None:
 
     db = AsyncSurreal(settings.surrealdb_url)
     try:
-        await db.connect()
+        await db.connect(settings.surrealdb_url)
         await db.signin({"username": settings.surrealdb_user, "password": settings.surrealdb_pass})
         await db.use(settings.surrealdb_ns, settings.surrealdb_db)
 
@@ -68,8 +68,8 @@ async def load_oura_sync_state() -> dict | None:
             result = result[0]
 
         if isinstance(result, dict):
-            result.pop("id", None)
-            return result
+            # Rebuild dict without the 'id' field to avoid type issues
+            return {k: v for k, v in result.items() if k != "id"}
         return None
     finally:
         await db.close()
@@ -84,7 +84,7 @@ async def save_oura_sync_state(state: dict) -> None:
 
     db = AsyncSurreal(settings.surrealdb_url)
     try:
-        await db.connect()
+        await db.connect(settings.surrealdb_url)
         await db.signin({"username": settings.surrealdb_user, "password": settings.surrealdb_pass})
         await db.use(settings.surrealdb_ns, settings.surrealdb_db)
 
@@ -107,7 +107,7 @@ async def store_heartrate_samples(samples: list[dict]) -> int:
 
     db = AsyncSurreal(settings.surrealdb_url)
     try:
-        await db.connect()
+        await db.connect(settings.surrealdb_url)
         await db.signin({"username": settings.surrealdb_user, "password": settings.surrealdb_pass})
         await db.use(settings.surrealdb_ns, settings.surrealdb_db)
 
@@ -154,14 +154,6 @@ async def store_heartrate_samples(samples: list[dict]) -> int:
 
 # --- Workflow ---
 
-with workflow.unsafe.imports_passed_through():
-    from glider.workflows.oura import (
-        fetch_oura_heartrate,
-        load_oura_sync_state,
-        save_oura_sync_state,
-        store_heartrate_samples,
-    )
-
 
 @workflow.defn
 class OuraHeartrateSyncWorkflow:
@@ -202,11 +194,12 @@ class OuraHeartrateSyncWorkflow:
 
         # Fetch heart rate data
         self._status = "fetching"
-        samples = await workflow.execute_activity(
+        samples_result = await workflow.execute_activity(
             fetch_oura_heartrate,
             args=[start_str, end_str],
             start_to_close_timeout=timedelta(seconds=120),
         )
+        samples = samples_result if samples_result is not None else []
 
         self._samples_count = len(samples)
 
@@ -214,11 +207,12 @@ class OuraHeartrateSyncWorkflow:
         self._status = "storing"
         stored_count = 0
         if samples:
-            stored_count = await workflow.execute_activity(
+            stored_count_result = await workflow.execute_activity(
                 store_heartrate_samples,
                 samples,
                 start_to_close_timeout=timedelta(seconds=120),
             )
+            stored_count = stored_count_result if stored_count_result is not None else 0
 
         # Save sync state
         self._status = "saving_state"

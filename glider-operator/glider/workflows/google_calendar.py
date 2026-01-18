@@ -1,6 +1,6 @@
 """Google Calendar sync workflow and activities."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from temporalio import activity, workflow
@@ -37,7 +37,7 @@ class CalendarEvent:
     description: str | None
     created: str | None
     updated: str | None
-    raw: dict = field(default_factory=dict)
+    raw: dict
 
 
 # --- Activities ---
@@ -82,7 +82,7 @@ async def _get_sync_token_from_db(calendar_id: str) -> str | None:
 
     db = AsyncSurreal(settings.surrealdb_url)
     try:
-        await db.connect()
+        await db.connect(settings.surrealdb_url)
         await db.signin({"username": settings.surrealdb_user, "password": settings.surrealdb_pass})
         await db.use(settings.surrealdb_ns, settings.surrealdb_db)
 
@@ -90,7 +90,7 @@ async def _get_sync_token_from_db(calendar_id: str) -> str | None:
         result = await db.select(record_id)
 
         if result and isinstance(result, dict):
-            return result.get("sync_token")
+            return result.get("sync_token")  # type: ignore[return-value]
         return None
     finally:
         await db.close()
@@ -111,7 +111,7 @@ async def store_calendar_events(events: list[dict], calendar_id: str) -> int:
 
     db = AsyncSurreal(settings.surrealdb_url)
     try:
-        await db.connect()
+        await db.connect(settings.surrealdb_url)
         await db.signin({"username": settings.surrealdb_user, "password": settings.surrealdb_pass})
         await db.use(settings.surrealdb_ns, settings.surrealdb_db)
 
@@ -168,7 +168,7 @@ async def save_sync_state(calendar_id: str, sync_token: str | None) -> None:
 
     db = AsyncSurreal(settings.surrealdb_url)
     try:
-        await db.connect()
+        await db.connect(settings.surrealdb_url)
         await db.signin({"username": settings.surrealdb_user, "password": settings.surrealdb_pass})
         await db.use(settings.surrealdb_ns, settings.surrealdb_db)
 
@@ -186,13 +186,6 @@ async def save_sync_state(calendar_id: str, sync_token: str | None) -> None:
 
 
 # --- Workflow ---
-
-with workflow.unsafe.imports_passed_through():
-    from glider.workflows.google_calendar import (
-        fetch_google_calendar_events,
-        save_sync_state,
-        store_calendar_events,
-    )
 
 
 @workflow.defn
@@ -217,11 +210,12 @@ class GoogleCalendarSyncWorkflow:
         self._status = "storing"
 
         # Store events in SurrealDB
-        events_synced = await workflow.execute_activity(
+        events_synced_result = await workflow.execute_activity(
             store_calendar_events,
             args=[events, input.calendar_id],
             start_to_close_timeout=timedelta(minutes=5),
         )
+        events_synced = events_synced_result if events_synced_result is not None else 0
         self._events_synced = events_synced
 
         self._status = "saving_state"

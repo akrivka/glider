@@ -31,7 +31,7 @@ async def store_in_surrealdb(message: str) -> StoreResult:
 
     db = AsyncSurreal(settings.surrealdb_url)
     try:
-        await db.connect()
+        await db.connect(settings.surrealdb_url)
         await db.signin({"username": settings.surrealdb_user, "password": settings.surrealdb_pass})
         await db.use(settings.surrealdb_ns, settings.surrealdb_db)
 
