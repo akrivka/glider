@@ -55,7 +55,10 @@ def meets_debounce_criteria(state: TrackingState, duration_ms: int) -> bool:
     listen_duration_seconds = listen_duration_ms / 1000
     percentage = (listen_duration_ms / duration_ms) * 100 if duration_ms > 0 else 0
 
-    return listen_duration_seconds >= DEBOUNCE_MIN_LISTEN_SECONDS or percentage >= DEBOUNCE_MIN_PERCENTAGE
+    return (
+        listen_duration_seconds >= DEBOUNCE_MIN_LISTEN_SECONDS
+        or percentage >= DEBOUNCE_MIN_PERCENTAGE
+    )
 
 
 def _extract_track_info(item: dict) -> dict:
@@ -279,7 +282,10 @@ class SpotifyListeningWorkflow:
             self._last_track = current_track_name
 
             # Check if track changed or restarted
-            track_restarted = state.current_track_id == current_track_id and progress_ms < state.last_seen_progress_ms - 5000
+            track_restarted = (
+                state.current_track_id == current_track_id
+                and progress_ms < state.last_seen_progress_ms - 5000
+            )
             track_changed = state.current_track_id != current_track_id
 
             if track_changed or track_restarted:

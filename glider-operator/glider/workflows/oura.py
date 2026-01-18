@@ -115,7 +115,7 @@ async def store_heartrate_samples(samples: list[dict]) -> int:
         now = datetime.now(UTC).isoformat() + "Z"
 
         for sample in samples:
-            # Sample format from Oura: {"bpm": 72, "source": "awake", "timestamp": "2024-01-15T10:30:00+00:00"}
+            # Sample: {"bpm": 72, "source": "awake", "timestamp": "2024-01-15T10:30:00+00:00"}
             timestamp = sample.get("timestamp", "")
             bpm = sample.get("bpm")
             source = sample.get("source", "unknown")
