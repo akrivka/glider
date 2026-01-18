@@ -15,7 +15,7 @@ The goal is to create something akin to Roam Research/Workflowy's outliner, spec
     * (Shift-)Tab-ing should bring the current block to the previous/next level, wherever is nearest.
 * Arrowing up and down should move the cursor to the most natural position, as if it was a WYSIWYG editor (e.g. arrowing up from a position in the middle of a block shouldn't jump to the first position in the block above)
 
-Make this the landing page of @glider-frontend/ with one editable outline in the center. Do not worry about backend replication at all, make it be client-side only, but be aware that we will want to sync this with a backend representation eventually (in a simple way! no CRDTs or other complicated stuff. It doesn't have to work offline).
+Make this the landing page of @glider-web/ with one editable outline in the center. Do not worry about backend replication at all, make it be client-side only, but be aware that we will want to sync this with a backend representation eventually (in a simple way! no CRDTs or other complicated stuff. It doesn't have to work offline).
 
 # Step 2
 

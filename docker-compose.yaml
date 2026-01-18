@@ -3,23 +3,23 @@ services:
   glider-worker:
     build:
       context: .
-      dockerfile: glider-backend/Dockerfile
+      dockerfile: glider-operator/Dockerfile
     environment:
       - TEMPORAL_ADDRESS=temporal:7233
       - SURREALDB_URL=ws://surrealdb:8000
       - SURREALDB_USER=root
       - SURREALDB_PASS=root
     volumes:
-      - ./glider-backend/secrets:/app/secrets
+      - ./glider-operator/secrets:/app/secrets
     command: ["python", "-m", "glider.entrypoint_worker"]
     depends_on:
       temporal:
         condition: service_healthy
 
   # SvelteKit Frontend (direct DB/Temporal access)
-  glider-frontend:
+  glider-web:
     build:
-      context: ./glider-frontend
+      context: ./glider-web
       dockerfile: Dockerfile
     ports:
       - "5173:5173"

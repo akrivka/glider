@@ -299,7 +299,7 @@ wheels = [
 ]
 
 [[package]]
-name = "glider-backend"
+name = "glider-operator"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

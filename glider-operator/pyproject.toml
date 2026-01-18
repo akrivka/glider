@@ -1,5 +1,5 @@
 [project]
-name = "glider-backend"
+name = "glider-operator"
 version = "0.1.0"
 description = "Glider Workers"
 readme = "README.md"

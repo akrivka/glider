@@ -7,11 +7,11 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 WORKDIR /app
 
 # Copy Python dependencies and install
-COPY glider-backend/pyproject.toml glider-backend/uv.lock ./
+COPY glider-operator/pyproject.toml glider-operator/uv.lock ./
 RUN uv sync --frozen --no-dev
 
 # Copy backend code
-COPY glider-backend/glider/ ./glider/
+COPY glider-operator/glider/ ./glider/
 
 # Set Python path for uv environment
 ENV PATH="/app/.venv/bin:$PATH"
