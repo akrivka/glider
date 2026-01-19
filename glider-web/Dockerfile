@@ -11,8 +11,11 @@ RUN npm ci
 # Copy source code
 COPY . .
 
-# Expose the dev server port
-EXPOSE 5173
+# Build the production app
+RUN npm run build
 
-# Run the dev server (accessible from outside container)
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+# Expose the production server port
+EXPOSE 3000
+
+# Run the production server
+CMD ["node", "build"]

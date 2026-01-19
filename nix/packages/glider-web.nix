@@ -15,10 +15,7 @@ buildNpmPackage {
   # This hash will need to be updated when package-lock.json changes
   # Run: nix build .#glider-web 2>&1 | grep "got:" to get the new hash
   # Or use: prefetch-npm-deps package-lock.json
-  npmDepsHash = "sha256-lKADx5N180GDHOXYifThVRiGdfy95y4XQIKfQu+jnLQ=";
-
-  # Don't run the build script, we'll run the dev server directly
-  dontNpmBuild = true;
+  npmDepsHash = "sha256-694AvLJDPvxdqTp1f2Qyt0hsWzWsBEKcDHBfeTI/yos=";
 
   nativeBuildInputs = [ makeWrapper ];
 
@@ -26,18 +23,20 @@ buildNpmPackage {
     runHook preInstall
 
     mkdir -p $out/lib/glider-web
-    cp -r . $out/lib/glider-web/
+    cp -r build $out/lib/glider-web/
+    cp -r node_modules $out/lib/glider-web/
+    cp package.json $out/lib/glider-web/
 
     mkdir -p $out/bin
-    makeWrapper ${nodejs_22}/bin/npm $out/bin/glider-web \
+    makeWrapper ${nodejs_22}/bin/node $out/bin/glider-web \
       --chdir $out/lib/glider-web \
-      --add-flags "run dev -- --host 0.0.0.0"
+      --add-flags "build"
 
     runHook postInstall
   '';
 
   meta = with lib; {
-    description = "Glider web frontend (SvelteKit dev server)";
+    description = "Glider web frontend (SvelteKit production server)";
     license = licenses.mit;
     platforms = platforms.all;
   };

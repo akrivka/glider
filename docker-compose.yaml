@@ -22,7 +22,7 @@ services:
       context: ./glider-web
       dockerfile: Dockerfile
     ports:
-      - "5173:5173"
+      - "3000:3000"
     environment:
       - TEMPORAL_ADDRESS=temporal:7233
       - SURREALDB_URL=ws://surrealdb:8000
