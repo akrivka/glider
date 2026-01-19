@@ -225,7 +225,7 @@ in
       serviceConfig = {
         Type = "simple";
         DynamicUser = true;
-        ExecStart = "${pkgs.temporal-ui}/bin/ui-server";
+        ExecStart = "${pkgs.temporal-ui-server}/bin/ui-server";
         Restart = "always";
         RestartSec = 5;
 
