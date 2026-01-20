@@ -21,7 +21,7 @@ export async function fetchEventsAndListening(): Promise<[CalendarEvent[], Spoti
 
 		const listeningResult = await db.query<[SpotifyListeningEvent[]]>(
 			`SELECT * FROM spotify_listening_history
-			 ORDER BY listened_at ASC`
+			 ORDER BY played_at ASC`
 		);
 
 		const heartrateResult = await db.query<[OuraHeartrateSample[]]>(
@@ -67,24 +67,32 @@ export function filterAndSerializeListening(
 ) {
 	return listeningHistory
 		.filter((event) => {
-			const listenedAt = new Date(event.listened_at);
+			// Database stores played_at, not listened_at
+			const playedAt = (event as unknown as { played_at: string }).played_at;
+			if (!playedAt) return false;
+			const listenedAt = new Date(playedAt);
 			return listenedAt >= startDate && listenedAt <= endDate;
 		})
-		.map((event) => ({
-			id: String(event.id),
-			spotify_track_id: event.spotify_track_id,
-			track_name: event.track_name,
-			artist_names: event.artist_names || [],
-			artist_ids: event.artist_ids || [],
-			album_name: event.album_name,
-			album_id: event.album_id,
-			duration_ms: event.duration_ms,
-			listened_at: event.listened_at,
-			progress_reached_ms: event.progress_reached_ms,
-			percentage_listened: event.percentage_listened,
-			explicit: event.explicit,
-			popularity: event.popularity
-		}));
+		.map((event) => {
+			// Map played_at to listened_at, use duration_ms as progress (assume full track listened)
+			const playedAt = (event as unknown as { played_at: string }).played_at;
+			const durationMs = event.duration_ms || 0;
+			return {
+				id: String(event.id),
+				spotify_track_id: event.spotify_track_id,
+				track_name: event.track_name,
+				artist_names: event.artist_names || [],
+				artist_ids: event.artist_ids || [],
+				album_name: event.album_name,
+				album_id: event.album_id,
+				duration_ms: durationMs,
+				listened_at: playedAt,
+				progress_reached_ms: durationMs, // Assume full track was listened
+				percentage_listened: 100, // Assume full track was listened
+				explicit: event.explicit,
+				popularity: event.popularity
+			};
+		});
 }
 
 export function filterAndSerializeHeartrate(
