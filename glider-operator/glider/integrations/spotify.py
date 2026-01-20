@@ -1,16 +1,23 @@
 """Spotify integration client."""
 
 import json
+import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
 
+logger = logging.getLogger(__name__)
+
 SCOPES = ["user-read-currently-playing", "user-read-playback-state"]
 AUTH_URL = "https://accounts.spotify.com/authorize"
 TOKEN_URL = "https://accounts.spotify.com/api/token"
 API_BASE = "https://api.spotify.com/v1"
+
+# Proactive refresh buffer - refresh tokens 120 seconds before expiry
+# This matches YourSpotify's approach for seamless background token renewal
+TOKEN_REFRESH_BUFFER_SECONDS = 120
 
 
 @dataclass
@@ -62,41 +69,75 @@ class SpotifyClient:
             )
 
     def _refresh_access_token(self) -> None:
-        """Refresh the access token using refresh token."""
+        """Refresh the access token using refresh token.
+
+        This implements automatic token refresh similar to YourSpotify's approach.
+        Tokens are refreshed proactively before expiration to ensure seamless operation.
+        """
         if not self._tokens:
             raise RuntimeError("No tokens available to refresh")
 
-        with httpx.Client() as client:
-            response = client.post(
-                TOKEN_URL,
-                data={
-                    "grant_type": "refresh_token",
-                    "refresh_token": self._tokens.refresh_token,
-                },
-                auth=(self.client_id, self.client_secret),
-            )
-            response.raise_for_status()
-            data = response.json()
+        logger.info("Refreshing Spotify access token")
 
-        self._tokens = SpotifyTokens(
-            access_token=data["access_token"],
-            refresh_token=data.get("refresh_token", self._tokens.refresh_token),
-            expires_at=time.time() + data["expires_in"] - 60,  # 60s buffer
-        )
-        self._save_tokens(self._tokens)
+        try:
+            with httpx.Client() as client:
+                response = client.post(
+                    TOKEN_URL,
+                    data={
+                        "grant_type": "refresh_token",
+                        "refresh_token": self._tokens.refresh_token,
+                    },
+                    auth=(self.client_id, self.client_secret),
+                )
+
+                if response.status_code == 400:
+                    error_data = response.json()
+                    error_desc = error_data.get("error_description", "")
+                    if "refresh token" in error_desc.lower():
+                        raise RuntimeError(
+                            "Spotify refresh token expired or revoked. "
+                            "Run 'python -m glider.integrations.spotify_auth_setup' to reauthenticate."
+                        )
+
+                response.raise_for_status()
+                data = response.json()
+
+            # Spotify may return a new refresh token - always save it if provided
+            new_refresh_token = data.get("refresh_token", self._tokens.refresh_token)
+
+            self._tokens = SpotifyTokens(
+                access_token=data["access_token"],
+                refresh_token=new_refresh_token,
+                expires_at=time.time()
+                + data["expires_in"]
+                - TOKEN_REFRESH_BUFFER_SECONDS,
+            )
+            self._save_tokens(self._tokens)
+            logger.info("Spotify access token refreshed successfully")
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Failed to refresh Spotify token: {e}")
+            raise RuntimeError(f"Failed to refresh Spotify token: {e}") from e
 
     def _get_access_token(self) -> str:
-        """Get a valid access token, refreshing if needed."""
+        """Get a valid access token, refreshing if needed.
+
+        Proactively refreshes tokens before expiration to ensure API calls
+        never fail due to expired tokens during normal operation.
+        """
         if not self._tokens:
             self._tokens = self._load_tokens()
 
         if not self._tokens:
             raise RuntimeError(
-                "No tokens available. Run 'python -m glider.integrations.spotify_auth_setup' first."
+                "No tokens available. "
+                "Run 'python -m glider.integrations.spotify_auth_setup' first."
             )
 
-        # Refresh if expired or about to expire
+        # Proactive refresh: refresh if token will expire within the buffer window
+        # This ensures we never make API calls with tokens that are about to expire
         if time.time() >= self._tokens.expires_at:
+            logger.debug("Token expired or about to expire, refreshing proactively")
             self._refresh_access_token()
 
         return self._tokens.access_token
@@ -115,6 +156,12 @@ class SpotifyClient:
 
         Returns:
             Dict with track info if playing, None if nothing playing.
+
+        Note:
+            This method handles automatic token refresh on 401 errors.
+            Combined with proactive refresh in _get_access_token(), this ensures
+            minimal reauthentication is required (only after ~60 days of inactivity
+            or if the user revokes access on Spotify).
         """
         access_token = self._get_access_token()
 
@@ -127,12 +174,20 @@ class SpotifyClient:
 
             # 204 No Content = nothing playing
             if response.status_code == 204:
+                logger.debug("No track currently playing")
                 return None
 
             # 401 = token expired, try refresh once (but only once to prevent infinite loop)
             if response.status_code == 401 and not _retried:
+                logger.warning("Got 401 from Spotify API, attempting token refresh")
                 self._refresh_access_token()
                 return self.get_currently_playing(_retried=True)
+
+            if response.status_code == 401 and _retried:
+                logger.error(
+                    "Got 401 after token refresh. Refresh token may be expired. "
+                    "Run 'python -m glider.integrations.spotify_auth_setup' to reauthenticate."
+                )
 
             response.raise_for_status()
             return response.json()
