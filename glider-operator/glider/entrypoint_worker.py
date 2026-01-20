@@ -22,10 +22,10 @@ from glider.workflows.oura import (
 )
 from glider.workflows.spotify import (
     SpotifyListeningWorkflow,
-    load_tracking_state,
-    poll_spotify_playback,
+    check_duplicate,
+    fetch_recently_played,
+    get_last_scrobble_timestamp,
     record_listening_event,
-    save_tracking_state,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -54,10 +54,10 @@ async def main():
             fetch_google_calendar_events,
             store_calendar_events,
             save_sync_state,
-            # Spotify activities
-            poll_spotify_playback,
-            load_tracking_state,
-            save_tracking_state,
+            # Spotify activities (recently-played approach)
+            fetch_recently_played,
+            get_last_scrobble_timestamp,
+            check_duplicate,
             record_listening_event,
             # Oura activities
             fetch_oura_heartrate,

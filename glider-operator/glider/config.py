@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     spotify_client_secret: str = ""
     spotify_redirect_uri: str = "http://127.0.0.1:8091/callback"
     spotify_tokens_path: Path = Path("secrets/spotify_tokens.json")
-    spotify_poll_interval_seconds: int = 7
+    spotify_poll_interval_seconds: int = 120  # 2 minutes, matches Your Spotify approach
 
     # Oura OAuth settings
     oura_client_id: str = ""

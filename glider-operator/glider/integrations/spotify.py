@@ -10,7 +10,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-SCOPES = ["user-read-currently-playing", "user-read-playback-state"]
+SCOPES = ["user-read-recently-played"]
 AUTH_URL = "https://accounts.spotify.com/authorize"
 TOKEN_URL = "https://accounts.spotify.com/api/token"
 API_BASE = "https://api.spotify.com/v1"
@@ -91,13 +91,34 @@ class SpotifyClient:
                 )
 
                 if response.status_code == 400:
-                    error_data = response.json()
-                    error_desc = error_data.get("error_description", "")
-                    if "refresh token" in error_desc.lower():
-                        raise RuntimeError(
-                            "Spotify refresh token expired or revoked. "
-                            "Run 'python -m glider.integrations.spotify_auth_setup' to reauthenticate."
+                    try:
+                        error_data = response.json()
+                        error = error_data.get("error", "unknown")
+                        error_desc = error_data.get("error_description", "")
+                        logger.error(
+                            f"Spotify token refresh failed: {error} - {error_desc}"
                         )
+                        logger.error(f"Full error response: {error_data}")
+
+                        if (
+                            "refresh token" in error_desc.lower()
+                            or error == "invalid_grant"
+                        ):
+                            raise RuntimeError(
+                                f"Spotify refresh token expired or revoked "
+                                f"({error}: {error_desc}). "
+                                "Run 'python -m glider.integrations.spotify_auth_setup' "
+                                "to reauthenticate."
+                            )
+                        else:
+                            raise RuntimeError(
+                                f"Spotify token refresh failed: {error} - {error_desc}"
+                            )
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Could not parse error response: {response.text}")
+                        raise RuntimeError(
+                            f"Spotify token refresh failed with status 400: {response.text}"
+                        ) from e
 
                 response.raise_for_status()
                 data = response.json()
@@ -191,3 +212,80 @@ class SpotifyClient:
 
             response.raise_for_status()
             return response.json()
+
+    def get_recently_played(
+        self,
+        after_timestamp_ms: int | None = None,
+        limit: int = 50,
+        *,
+        _retried: bool = False,
+    ) -> list[dict]:
+        """
+        Get recently played tracks using Spotify's recently-played endpoint.
+
+        This approach is more reliable than polling currently-playing because:
+        - Works even if the app was offline (catches up on history)
+        - Provides played_at timestamps
+        - Handles all pagination automatically
+
+        Args:
+            after_timestamp_ms: Unix timestamp in milliseconds. Only return tracks
+                played after this timestamp. If None, returns most recent tracks.
+            limit: Max tracks per request (1-50, default 50).
+            _retried: Internal flag to prevent infinite retry loops.
+
+        Returns:
+            List of recently played items, each containing:
+            - track: Full track object
+            - played_at: ISO timestamp when track was played
+        """
+        access_token = self._get_access_token()
+
+        all_items: list[dict] = []
+        params: dict = {"limit": min(limit, 50)}
+
+        if after_timestamp_ms is not None:
+            params["after"] = after_timestamp_ms
+
+        with httpx.Client() as client:
+            # Build initial URL
+            url = f"{API_BASE}/me/player/recently-played"
+
+            while url:
+                response = client.get(
+                    url,
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    params=params if url == f"{API_BASE}/me/player/recently-played" else None,
+                )
+
+                # 401 = token expired, try refresh once
+                if response.status_code == 401 and not _retried:
+                    logger.warning("Got 401 from Spotify API, attempting token refresh")
+                    self._refresh_access_token()
+                    return self.get_recently_played(
+                        after_timestamp_ms=after_timestamp_ms,
+                        limit=limit,
+                        _retried=True,
+                    )
+
+                if response.status_code == 401 and _retried:
+                    logger.error(
+                        "Got 401 after token refresh. Refresh token may be expired. "
+                        "Run 'python -m glider.integrations.spotify_auth_setup' to reauthenticate."
+                    )
+
+                response.raise_for_status()
+                data = response.json()
+
+                items = data.get("items", [])
+                all_items.extend(items)
+
+                # Handle pagination - Spotify provides full URL for next page
+                url = data.get("next")
+
+                logger.debug(
+                    f"Fetched {len(items)} tracks, total: {len(all_items)}, next: {bool(url)}"
+                )
+
+        logger.info(f"Fetched {len(all_items)} recently played tracks")
+        return all_items

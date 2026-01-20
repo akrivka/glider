@@ -20,7 +20,12 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 
 from glider.config import settings
-from glider.integrations.spotify import AUTH_URL, SCOPES, TOKEN_URL
+from glider.integrations.spotify import (
+    AUTH_URL,
+    SCOPES,
+    TOKEN_REFRESH_BUFFER_SECONDS,
+    TOKEN_URL,
+)
 
 
 class CallbackHandler(BaseHTTPRequestHandler):
@@ -111,18 +116,35 @@ def main() -> None:
     print("\nExchanging code for tokens...")
 
     # Exchange code for tokens
-    with httpx.Client() as client:
-        response = client.post(
-            TOKEN_URL,
-            data={
-                "grant_type": "authorization_code",
-                "code": CallbackHandler.auth_code,
-                "redirect_uri": redirect_uri,
-            },
-            auth=(client_id, client_secret),
-        )
-        response.raise_for_status()
-        data = response.json()
+    try:
+        with httpx.Client() as client:
+            response = client.post(
+                TOKEN_URL,
+                data={
+                    "grant_type": "authorization_code",
+                    "code": CallbackHandler.auth_code,
+                    "redirect_uri": redirect_uri,
+                },
+                auth=(client_id, client_secret),
+            )
+
+            if response.status_code == 400:
+                error_data = response.json()
+                error = error_data.get("error", "unknown")
+                error_desc = error_data.get("error_description", "")
+                print(f"\nError: {error} - {error_desc}")
+                print(
+                    "\nPossible issues:"
+                    "\n- Check that SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET are correct"
+                    f"\n- Verify redirect URI matches in Spotify Dashboard: {redirect_uri}"
+                )
+                return
+
+            response.raise_for_status()
+            data = response.json()
+    except httpx.HTTPError as e:
+        print(f"\nHTTP Error: {e}")
+        return
 
     # Save tokens
     tokens_path.parent.mkdir(parents=True, exist_ok=True)
@@ -131,7 +153,9 @@ def main() -> None:
             {
                 "access_token": data["access_token"],
                 "refresh_token": data["refresh_token"],
-                "expires_at": time.time() + data["expires_in"] - 60,
+                "expires_at": time.time()
+                + data["expires_in"]
+                - TOKEN_REFRESH_BUFFER_SECONDS,
             },
             f,
         )
