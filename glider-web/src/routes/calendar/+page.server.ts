@@ -2,7 +2,8 @@ import {
 	fetchEventsAndListening,
 	filterAndSerializeEvents,
 	filterAndSerializeListening,
-	filterAndSerializeHeartrate
+	filterAndSerializeHeartrate,
+	filterAndSerializeStress
 } from '$lib/server/calendar-utils';
 import type { PageServerLoad } from './$types';
 
@@ -24,18 +25,20 @@ export const load: PageServerLoad = async ({ url }) => {
 	weekEnd.setDate(weekStart.getDate() + 7);
 	weekEnd.setHours(23, 59, 59, 999);
 
-	// Fetch calendar events, Spotify listening history, and Oura heartrate
-	const [events, listeningHistory, heartrateSamples] = await fetchEventsAndListening();
+	// Fetch calendar events, Spotify listening history, Oura heartrate, and stress data
+	const [events, listeningHistory, heartrateSamples, stressRecords] = await fetchEventsAndListening();
 
 	// Filter and serialize data for the week
 	const filteredEvents = filterAndSerializeEvents(events, weekStart, weekEnd);
 	const filteredListening = filterAndSerializeListening(listeningHistory, weekStart, weekEnd);
 	const filteredHeartrate = filterAndSerializeHeartrate(heartrateSamples, weekStart, weekEnd);
+	const filteredStress = filterAndSerializeStress(stressRecords, weekStart, weekEnd);
 
 	return {
 		events: filteredEvents,
 		listeningHistory: filteredListening,
 		heartrateSamples: filteredHeartrate,
+		stressRecords: filteredStress,
 		weekStart: weekStart.toISOString(),
 		weekEnd: weekEnd.toISOString(),
 		weekOffset
