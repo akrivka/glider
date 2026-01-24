@@ -1,10 +1,27 @@
 import asyncio
 import logging
 
+import logfire
 from temporalio.client import Client
 from temporalio.worker import Worker
 
 from glider.config import settings
+
+# Configure Logfire for OpenTelemetry tracing and logging
+logfire.configure(
+    service_name=settings.logfire_service_name,
+    environment=settings.logfire_environment,
+    token=settings.logfire_token,
+    console=logfire.ConsoleOptions(
+        colors="auto",
+        verbose=True,
+    ) if settings.logfire_console_enabled else False,
+    send_to_logfire="if-token-present",
+)
+
+# Instrument httpx for automatic tracing of HTTP requests
+logfire.instrument_httpx()
+
 from glider.workflows.activities import sleep_activity, store_in_surrealdb
 from glider.workflows.demo import DemoWorkflow
 from glider.workflows.google_calendar import (
@@ -33,11 +50,11 @@ logger = logging.getLogger(__name__)
 
 
 async def main():
-    logger.info(f"Connecting to Temporal at {settings.temporal_address}")
+    logfire.info("Connecting to Temporal", temporal_address=settings.temporal_address)
 
     client = await Client.connect(settings.temporal_address)
 
-    logger.info(f"Starting worker on task queue: {settings.temporal_task_queue}")
+    logfire.info("Starting worker", task_queue=settings.temporal_task_queue)
 
     worker = Worker(
         client,
@@ -67,7 +84,8 @@ async def main():
         ],
     )
 
-    await worker.run()
+    with logfire.span("temporal_worker_running", task_queue=settings.temporal_task_queue):
+        await worker.run()
 
 
 if __name__ == "__main__":
