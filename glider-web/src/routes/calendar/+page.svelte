@@ -7,7 +7,8 @@
 		SpotifyListeningEvent,
 		ProcessedListeningSegment,
 		OuraHeartrateSample,
-		ProcessedHeartrateSample
+		ProcessedHeartrateSample,
+		OuraDailyStress
 	} from '$lib/types/calendar';
 	import {
 		EVENT_COLORS,
@@ -40,6 +41,12 @@
 	let hoveredHeartrate: {
 		bpm: number;
 		time: string;
+		position: { x: number; y: number };
+	} | null = $state(null);
+	let hoveredStress: {
+		stressHigh: number | null;
+		recoveryHigh: number | null;
+		daySummary: string | null;
 		position: { x: number; y: number };
 	} | null = $state(null);
 
@@ -267,6 +274,56 @@
 		}
 	}
 
+	// Get stress data for a specific day
+	function getStressForDay(stressRecords: OuraDailyStress[], day: Date): OuraDailyStress | null {
+		const dayStr = day.toISOString().split('T')[0];
+		return stressRecords.find((record) => record.day === dayStr) || null;
+	}
+
+	// Get color for stress level (gradient from green to red)
+	function getStressColor(stressHigh: number | null, recoveryHigh: number | null): string {
+		if (stressHigh === null && recoveryHigh === null) {
+			return 'rgba(100, 100, 100, 0.3)'; // Gray for no data
+		}
+
+		// If we have stress_high, use it (higher = more stressed = more red)
+		if (stressHigh !== null) {
+			// stress_high is typically 0-100 (percentage of day in high stress)
+			const normalized = Math.min(1, Math.max(0, stressHigh / 100));
+			// Green (low stress) to Red (high stress)
+			const r = Math.round(34 + normalized * (239 - 34));
+			const g = Math.round(197 + normalized * (68 - 197));
+			const b = Math.round(94 + normalized * (68 - 94));
+			return `rgba(${r}, ${g}, ${b}, 0.6)`;
+		}
+
+		// If we only have recovery_high, use it (higher = more recovery = more green)
+		if (recoveryHigh !== null) {
+			const normalized = Math.min(1, Math.max(0, recoveryHigh / 100));
+			// Red (low recovery) to Green (high recovery)
+			const r = Math.round(239 - normalized * (239 - 34));
+			const g = Math.round(68 + normalized * (197 - 68));
+			const b = Math.round(68 + normalized * (94 - 68));
+			return `rgba(${r}, ${g}, ${b}, 0.6)`;
+		}
+
+		return 'rgba(100, 100, 100, 0.3)';
+	}
+
+	// Handle stress hover
+	function handleStressHover(event: MouseEvent, stress: OuraDailyStress | null) {
+		if (stress) {
+			hoveredStress = {
+				stressHigh: stress.stress_high,
+				recoveryHigh: stress.recovery_high,
+				daySummary: stress.day_summary,
+				position: { x: event.clientX, y: event.clientY }
+			};
+		} else {
+			hoveredStress = null;
+		}
+	}
+
 	const weekDays = $derived(getWeekDays(data.weekStart));
 	const processedEvents = $derived(processEvents(data.events as CalendarEvent[]));
 	const allDayEvents = $derived(processedEvents.filter((e) => e.isAllDay));
@@ -277,6 +334,7 @@
 	const heartrateSamples = $derived(
 		processHeartrateSamples((data.heartrateSamples || []) as OuraHeartrateSample[])
 	);
+	const stressRecords = $derived((data.stressRecords || []) as OuraDailyStress[]);
 </script>
 
 <svelte:head>
@@ -526,6 +584,31 @@
 								{/if}
 							</div>
 						{/if}
+
+						<!-- Oura Stress Column -->
+						{@const dayStress = getStressForDay(stressRecords, day.date)}
+						<div
+							class="relative w-8 flex-shrink-0 border-l border-slate-800/30 bg-slate-900/20"
+							style="height: {HOURS.length * HOUR_HEIGHT}px"
+							onmouseenter={(e) => handleStressHover(e, dayStress)}
+							onmousemove={(e) => handleStressHover(e, dayStress)}
+							onmouseleave={() => (hoveredStress = null)}
+							role="img"
+							aria-label="Stress data"
+						>
+							<!-- Stress icon at top (lightning bolt for stress) -->
+							<div class="absolute top-0 left-0 right-0 flex justify-center pt-1">
+								<svg class="h-3 w-3 text-amber-500/60" viewBox="0 0 24 24" fill="currentColor">
+									<path d="M13 0L0 13h9v11l13-13h-9z"/>
+								</svg>
+							</div>
+
+							<!-- Stress level as full-column background -->
+							<div
+								class="absolute inset-x-0 top-4 bottom-0 mx-0.5 rounded-sm"
+								style="background-color: {getStressColor(dayStress?.stress_high ?? null, dayStress?.recovery_high ?? null)};"
+							></div>
+						</div>
 					</div>
 				{/each}
 			</div>
@@ -574,6 +657,43 @@
 				<div class="text-xs text-slate-400">
 					{hoveredHeartrate.time}
 				</div>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Hover tooltip for stress info -->
+{#if hoveredStress}
+	<div
+		class="pointer-events-none fixed z-50 rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 shadow-xl"
+		style="left: {hoveredStress.position.x + 12}px; top: {hoveredStress.position.y - 10}px;"
+	>
+		<div class="flex items-center gap-1.5">
+			<svg class="h-3 w-3 text-amber-500" viewBox="0 0 24 24" fill="currentColor">
+				<path d="M13 0L0 13h9v11l13-13h-9z"/>
+			</svg>
+			<div>
+				{#if hoveredStress.stressHigh !== null || hoveredStress.recoveryHigh !== null}
+					{#if hoveredStress.stressHigh !== null}
+						<div class="text-xs font-medium text-slate-200">
+							Stress: {hoveredStress.stressHigh}%
+						</div>
+					{/if}
+					{#if hoveredStress.recoveryHigh !== null}
+						<div class="text-xs font-medium text-slate-200">
+							Recovery: {hoveredStress.recoveryHigh}%
+						</div>
+					{/if}
+					{#if hoveredStress.daySummary}
+						<div class="text-xs text-slate-400 capitalize">
+							{hoveredStress.daySummary}
+						</div>
+					{/if}
+				{:else}
+					<div class="text-xs text-slate-400">
+						No stress data
+					</div>
+				{/if}
 			</div>
 		</div>
 	</div>
