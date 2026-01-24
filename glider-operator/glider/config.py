@@ -31,5 +31,11 @@ class Settings(BaseSettings):
     oura_tokens_path: Path = Path("secrets/oura_tokens.json")
     oura_sync_interval_minutes: int = 30
 
+    # Logfire/OpenTelemetry settings
+    logfire_token: str | None = None
+    logfire_service_name: str = "glider-operator"
+    logfire_environment: str = "development"
+    logfire_console_enabled: bool = True
+
 
 settings = Settings()
