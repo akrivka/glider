@@ -61,6 +61,7 @@ class GoogleCalendarClient:
         calendar_id: str = "primary",
         sync_token: str | None = None,
         time_min: datetime | None = None,
+        show_deleted: bool = True,
         *,
         _retried: bool = False,
     ) -> tuple[list[dict], str | None]:
@@ -71,6 +72,7 @@ class GoogleCalendarClient:
             calendar_id: Calendar ID to fetch from (default: "primary")
             sync_token: Token for incremental sync (from previous fetch)
             time_min: Minimum time bound for events (only for initial sync)
+            show_deleted: Include deleted events (returns status="cancelled")
             _retried: Internal flag to prevent infinite retry loops.
 
         Returns:
@@ -85,6 +87,7 @@ class GoogleCalendarClient:
                 "calendarId": calendar_id,
                 "singleEvents": True,
                 "orderBy": "startTime",
+                "showDeleted": show_deleted,
             }
 
             if sync_token:

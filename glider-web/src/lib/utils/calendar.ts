@@ -11,6 +11,20 @@ export const EVENT_COLORS = [
 	'bg-fuchsia-500/90 border-fuchsia-600'
 ];
 
+export const GOOGLE_EVENT_COLORS: Record<string, string> = {
+	'1': 'bg-indigo-500/90 border-indigo-600', // Lavender
+	'2': 'bg-emerald-500/90 border-emerald-600', // Sage
+	'3': 'bg-purple-500/90 border-purple-600', // Grape
+	'4': 'bg-rose-500/90 border-rose-600', // Flamingo
+	'5': 'bg-amber-400/90 border-amber-500', // Banana
+	'6': 'bg-orange-500/90 border-orange-600', // Tangerine
+	'7': 'bg-sky-500/90 border-sky-600', // Peacock
+	'8': 'bg-slate-600/90 border-slate-700', // Graphite
+	'9': 'bg-blue-500/90 border-blue-600', // Blueberry
+	'10': 'bg-green-600/90 border-green-700', // Basil
+	'11': 'bg-red-600/90 border-red-700' // Tomato
+};
+
 export const MONTH_NAMES = [
 	'January',
 	'February',
@@ -40,16 +54,42 @@ export function getEventDate(time: { dateTime?: string; date?: string }): Date {
 }
 
 export function processEvents(events: CalendarEvent[]): ProcessedEvent[] {
-	return events.map((event, index) => ({
-		id: event.google_id,
-		summary: event.summary || '(No title)',
-		startTime: getEventDate(event.start),
-		endTime: getEventDate(event.end),
-		isAllDay: !event.start.dateTime,
-		color: EVENT_COLORS[index % EVENT_COLORS.length],
-		htmlLink: event.html_link,
-		location: event.location
-	}));
+	const recurringColorMap = new Map<string, string>();
+	let fallbackIndex = 0;
+
+	for (const event of events) {
+		if (!event.recurring_event_id || !event.color_id) continue;
+		const googleColor = GOOGLE_EVENT_COLORS[event.color_id];
+		if (googleColor) {
+			recurringColorMap.set(event.recurring_event_id, googleColor);
+		}
+	}
+
+	const getFallbackColor = (key: string): string => {
+		const existing = recurringColorMap.get(key);
+		if (existing) return existing;
+		const color = EVENT_COLORS[fallbackIndex % EVENT_COLORS.length];
+		fallbackIndex += 1;
+		recurringColorMap.set(key, color);
+		return color;
+	};
+
+	return events.map((event) => {
+		const googleColor = event.color_id ? GOOGLE_EVENT_COLORS[event.color_id] : undefined;
+		const recurringKey = event.recurring_event_id ?? event.google_id;
+		const color = googleColor ?? getFallbackColor(recurringKey);
+
+		return {
+			id: event.google_id,
+			summary: event.summary || '(No title)',
+			startTime: getEventDate(event.start),
+			endTime: getEventDate(event.end),
+			isAllDay: !event.start.dateTime,
+			color,
+			htmlLink: event.html_link,
+			location: event.location
+		};
+	});
 }
 
 export function processListeningHistory(history: SpotifyListeningEvent[]): ProcessedListeningSegment[] {

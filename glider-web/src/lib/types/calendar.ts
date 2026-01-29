@@ -8,6 +8,8 @@ export interface CalendarEvent {
 	id: string;
 	google_id: string;
 	calendar_id: string;
+	recurring_event_id?: string;
+	color_id?: string;
 	summary: string;
 	start: CalendarEventTime;
 	end: CalendarEventTime;

@@ -21,7 +21,12 @@ class CalendarSyncResult:
     sync_token: str | None
 
 
-async def fetch_google_calendar_events(calendar_id: str) -> tuple[list[dict], str | None]:
+async def fetch_google_calendar_events(
+    calendar_id: str,
+    *,
+    days_back: int = 30,
+    ignore_sync_token: bool = False,
+) -> tuple[list[dict], str | None]:
     """Fetch events from Google Calendar."""
     from glider.config import settings
     from glider.integrations.google_calendar import GoogleCalendarClient
@@ -34,17 +39,18 @@ async def fetch_google_calendar_events(calendar_id: str) -> tuple[list[dict], st
     )
 
     # Get sync state to do incremental sync if available
-    sync_token = await _get_sync_token_from_db(calendar_id)
+    sync_token = None if ignore_sync_token else await _get_sync_token_from_db(calendar_id)
 
     # If no sync token, fetch events from the last 30 days
     time_min = None
     if not sync_token:
-        time_min = datetime.now(UTC) - timedelta(days=30)
+        time_min = datetime.now(UTC) - timedelta(days=days_back)
 
     events, next_sync_token = client.fetch_events(
         calendar_id=calendar_id,
         sync_token=sync_token,
         time_min=time_min,
+        show_deleted=True,
     )
 
     logger.info("Fetched %s events", len(events))
@@ -109,6 +115,8 @@ async def store_calendar_events(events: list[dict], calendar_id: str) -> int:
             event_data = {
                 "google_id": google_id,
                 "calendar_id": calendar_id,
+                "recurring_event_id": event.get("recurringEventId"),
+                "color_id": event.get("colorId"),
                 "summary": event.get("summary", ""),
                 "start": event.get("start", {}),
                 "end": event.get("end", {}),
@@ -160,9 +168,18 @@ async def save_sync_state(calendar_id: str, sync_token: str | None) -> None:
         await db.close()
 
 
-async def sync_google_calendar(calendar_id: str = "primary") -> CalendarSyncResult:
+async def sync_google_calendar(
+    calendar_id: str = "primary",
+    *,
+    days_back: int = 30,
+    ignore_sync_token: bool = False,
+) -> CalendarSyncResult:
     with logfire.span("sync_google_calendar", calendar_id=calendar_id):
-        events, next_sync_token = await fetch_google_calendar_events(calendar_id)
+        events, next_sync_token = await fetch_google_calendar_events(
+            calendar_id,
+            days_back=days_back,
+            ignore_sync_token=ignore_sync_token,
+        )
         events_synced = await store_calendar_events(events, calendar_id)
         await save_sync_state(calendar_id, next_sync_token)
         logfire.info("Google Calendar sync complete", events_synced=events_synced)
@@ -174,9 +191,17 @@ def main() -> None:
     configure_logfire()
     parser = argparse.ArgumentParser(description="Sync Google Calendar to SurrealDB")
     parser.add_argument("--calendar-id", default="primary")
+    parser.add_argument("--days-back", type=int, default=30)
+    parser.add_argument("--ignore-sync-token", action="store_true")
     args = parser.parse_args()
 
-    asyncio.run(sync_google_calendar(calendar_id=args.calendar_id))
+    asyncio.run(
+        sync_google_calendar(
+            calendar_id=args.calendar_id,
+            days_back=args.days_back,
+            ignore_sync_token=args.ignore_sync_token,
+        )
+    )
 
 
 if __name__ == "__main__":

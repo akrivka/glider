@@ -58,6 +58,8 @@ export function filterAndSerializeEvents(
 			id: String(event.id),
 			google_id: event.google_id,
 			calendar_id: event.calendar_id,
+			recurring_event_id: event.recurring_event_id,
+			color_id: event.color_id,
 			summary: event.summary,
 			start: event.start,
 			end: event.end,
