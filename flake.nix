@@ -31,7 +31,7 @@
     }:
     {
       # NixOS module for deploying Glider
-      nixosModules.default = import ./nix/module.nix { inherit self; };
+      nixosModules.default = ./nix/module.nix;
       nixosModules.glider = self.nixosModules.default;
     }
     // flake-utils.lib.eachDefaultSystem (
