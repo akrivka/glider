@@ -217,7 +217,6 @@ in
           "--ui-port ${toString cfg.temporal.ui.port}"
           "--db-filename ${cfg.temporal.dbPath}"
           "--namespace ${cfg.temporal.namespace}"
-          "--tls-disable-host-verification"
         ];
         Restart = "on-failure";
         RestartSec = "5s";
