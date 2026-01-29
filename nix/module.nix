@@ -1,7 +1,6 @@
 {
   config,
   lib,
-  pkgs,
   ...
 }:
 let
@@ -146,10 +145,8 @@ in
       after = [
         "network.target"
       ]
-      ++ lib.optional cfg.surrealdb.enable "surrealdb.service"
-      ;
-      wants =
-        lib.optional cfg.surrealdb.enable "surrealdb.service";
+      ++ lib.optional cfg.surrealdb.enable "surrealdb.service";
+      wants = lib.optional cfg.surrealdb.enable "surrealdb.service";
       wantedBy = [ "multi-user.target" ];
 
       serviceConfig = {
