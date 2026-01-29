@@ -8,7 +8,7 @@ from pathlib import Path
 
 import httpx
 
-SCOPES = ["heartrate"]
+SCOPES = ["heartrate", "daily", "workout", "session", "spo2"]
 AUTH_URL = "https://cloud.ouraring.com/oauth/authorize"
 TOKEN_URL = "https://api.ouraring.com/oauth/token"
 API_BASE = "https://api.ouraring.com/v2"
@@ -164,3 +164,164 @@ class OuraClient:
                     break
 
             return all_data
+
+    def _get_daily_data(
+        self,
+        endpoint: str,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+        *,
+        _retried: bool = False,
+    ) -> list[dict]:
+        """
+        Generic method to fetch daily data from Oura.
+
+        Args:
+            endpoint: The API endpoint (e.g., 'daily_stress', 'daily_activity').
+            start_date: Start of the date range.
+            end_date: End of the date range.
+            _retried: Internal flag to prevent infinite retry loops.
+
+        Returns:
+            List of daily data records.
+        """
+        access_token = self._get_access_token()
+
+        params = {}
+        if start_date:
+            params["start_date"] = start_date.strftime("%Y-%m-%d")
+        if end_date:
+            params["end_date"] = end_date.strftime("%Y-%m-%d")
+
+        with httpx.Client() as client:
+            all_data = []
+            next_token = None
+
+            while True:
+                if next_token:
+                    params["next_token"] = next_token
+
+                response = client.get(
+                    f"{API_BASE}/usercollection/{endpoint}",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    params=params,
+                )
+
+                if response.status_code == 401 and not _retried:
+                    self._refresh_access_token()
+                    return self._get_daily_data(endpoint, start_date, end_date, _retried=True)
+
+                response.raise_for_status()
+                data = response.json()
+
+                all_data.extend(data.get("data", []))
+
+                next_token = data.get("next_token")
+                if not next_token:
+                    break
+
+            return all_data
+
+    def get_daily_stress(
+        self,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+    ) -> list[dict]:
+        """
+        Get daily stress data from Oura.
+
+        Returns:
+            List of daily stress records with day, stress_high, recovery_high, day_summary.
+        """
+        return self._get_daily_data("daily_stress", start_date, end_date)
+
+    def get_daily_activity(
+        self,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+    ) -> list[dict]:
+        """
+        Get daily activity data from Oura.
+
+        Returns:
+            List of daily activity records with score, steps, calories, etc.
+        """
+        return self._get_daily_data("daily_activity", start_date, end_date)
+
+    def get_daily_readiness(
+        self,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+    ) -> list[dict]:
+        """
+        Get daily readiness data from Oura.
+
+        Returns:
+            List of daily readiness records with score and contributors.
+        """
+        return self._get_daily_data("daily_readiness", start_date, end_date)
+
+    def get_daily_sleep(
+        self,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+    ) -> list[dict]:
+        """
+        Get daily sleep data from Oura.
+
+        Returns:
+            List of daily sleep records with score and contributors.
+        """
+        return self._get_daily_data("daily_sleep", start_date, end_date)
+
+    def get_daily_spo2(
+        self,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+    ) -> list[dict]:
+        """
+        Get daily SpO2 data from Oura.
+
+        Returns:
+            List of daily SpO2 records with spo2_percentage.
+        """
+        return self._get_daily_data("daily_spo2", start_date, end_date)
+
+    def get_sleep(
+        self,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+    ) -> list[dict]:
+        """
+        Get detailed sleep period data from Oura.
+
+        Returns:
+            List of sleep period records with HRV, heart rate, sleep phases, etc.
+        """
+        return self._get_daily_data("sleep", start_date, end_date)
+
+    def get_sessions(
+        self,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+    ) -> list[dict]:
+        """
+        Get session data (meditation, breathing) from Oura.
+
+        Returns:
+            List of session records.
+        """
+        return self._get_daily_data("session", start_date, end_date)
+
+    def get_workouts(
+        self,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+    ) -> list[dict]:
+        """
+        Get workout data from Oura.
+
+        Returns:
+            List of workout records with activity, calories, distance, etc.
+        """
+        return self._get_daily_data("workout", start_date, end_date)

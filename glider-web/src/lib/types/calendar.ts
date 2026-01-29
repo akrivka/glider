@@ -81,3 +81,125 @@ export interface ProcessedHeartrateSample {
 	bpm: number;
 	source: string;
 }
+
+// Oura Daily Stress
+export interface OuraDailyStress {
+	id: string;
+	day: string;
+	stress_high: number | null;
+	recovery_high: number | null;
+	day_summary: string | null;
+	_synced_at?: string;
+}
+
+// Oura Daily Activity
+export interface OuraDailyActivity {
+	id: string;
+	day: string;
+	score: number | null;
+	active_calories: number | null;
+	steps: number | null;
+	total_calories: number | null;
+	target_calories: number | null;
+	equivalent_walking_distance: number | null;
+	high_activity_time: number | null;
+	medium_activity_time: number | null;
+	low_activity_time: number | null;
+	sedentary_time: number | null;
+	resting_time: number | null;
+	_synced_at?: string;
+}
+
+// Oura Daily Readiness
+export interface OuraDailyReadiness {
+	id: string;
+	day: string;
+	score: number | null;
+	temperature_deviation: number | null;
+	temperature_trend_deviation: number | null;
+	contributors: {
+		activity_balance: number | null;
+		body_temperature: number | null;
+		hrv_balance: number | null;
+		previous_day_activity: number | null;
+		previous_night: number | null;
+		recovery_index: number | null;
+		resting_heart_rate: number | null;
+		sleep_balance: number | null;
+	} | null;
+	_synced_at?: string;
+}
+
+// Oura Daily Sleep
+export interface OuraDailySleep {
+	id: string;
+	day: string;
+	score: number | null;
+	contributors: {
+		deep_sleep: number | null;
+		efficiency: number | null;
+		latency: number | null;
+		rem_sleep: number | null;
+		restfulness: number | null;
+		timing: number | null;
+		total_sleep: number | null;
+	} | null;
+	_synced_at?: string;
+}
+
+// Oura Daily SpO2
+export interface OuraDailySpo2 {
+	id: string;
+	day: string;
+	spo2_percentage: {
+		average: number | null;
+	} | null;
+	_synced_at?: string;
+}
+
+// Oura Sleep Period (detailed)
+export interface OuraSleepPeriod {
+	id: string;
+	day: string;
+	bedtime_start: string | null;
+	bedtime_end: string | null;
+	average_breath: number | null;
+	average_heart_rate: number | null;
+	average_hrv: number | null;
+	lowest_heart_rate: number | null;
+	total_sleep_duration: number | null;
+	deep_sleep_duration: number | null;
+	light_sleep_duration: number | null;
+	rem_sleep_duration: number | null;
+	awake_time: number | null;
+	efficiency: number | null;
+	latency: number | null;
+	type: string | null;
+	_synced_at?: string;
+}
+
+// Oura Workout
+export interface OuraWorkout {
+	id: string;
+	day: string;
+	activity: string | null;
+	calories: number | null;
+	distance: number | null;
+	start_datetime: string | null;
+	end_datetime: string | null;
+	intensity: string | null;
+	label: string | null;
+	source: string | null;
+	_synced_at?: string;
+}
+
+// Oura Session (meditation, breathing)
+export interface OuraSession {
+	id: string;
+	day: string;
+	start_datetime: string | null;
+	end_datetime: string | null;
+	type: string | null;
+	mood: string | null;
+	_synced_at?: string;
+}

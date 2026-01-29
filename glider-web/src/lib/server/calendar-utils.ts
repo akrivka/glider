@@ -1,5 +1,5 @@
 import { withDb } from '$lib/server/surrealdb';
-import type { CalendarEvent, SpotifyListeningEvent, OuraHeartrateSample } from '$lib/types/calendar';
+import type { CalendarEvent, SpotifyListeningEvent, OuraHeartrateSample, OuraDailyStress } from '$lib/types/calendar';
 
 export function getEventDate(time: { dateTime?: string; date?: string }): Date {
 	if (time.dateTime) {
@@ -11,7 +11,7 @@ export function getEventDate(time: { dateTime?: string; date?: string }): Date {
 	return new Date();
 }
 
-export async function fetchEventsAndListening(): Promise<[CalendarEvent[], SpotifyListeningEvent[], OuraHeartrateSample[]]> {
+export async function fetchEventsAndListening(): Promise<[CalendarEvent[], SpotifyListeningEvent[], OuraHeartrateSample[], OuraDailyStress[]]> {
 	return await withDb(async (db) => {
 		const eventsResult = await db.query<[CalendarEvent[]]>(
 			`SELECT * FROM google_calendar_events
@@ -29,7 +29,17 @@ export async function fetchEventsAndListening(): Promise<[CalendarEvent[], Spoti
 			 ORDER BY timestamp ASC`
 		);
 
-		return [eventsResult[0] || [], listeningResult[0] || [], heartrateResult[0] || []] as [CalendarEvent[], SpotifyListeningEvent[], OuraHeartrateSample[]];
+		const stressResult = await db.query<[OuraDailyStress[]]>(
+			`SELECT * FROM oura_daily_stress
+			 ORDER BY day ASC`
+		);
+
+		return [
+			eventsResult[0] || [],
+			listeningResult[0] || [],
+			heartrateResult[0] || [],
+			stressResult[0] || []
+		] as [CalendarEvent[], SpotifyListeningEvent[], OuraHeartrateSample[], OuraDailyStress[]];
 	});
 }
 
@@ -110,5 +120,24 @@ export function filterAndSerializeHeartrate(
 			timestamp: sample.timestamp,
 			bpm: sample.bpm,
 			source: sample.source
+		}));
+}
+
+export function filterAndSerializeStress(
+	stressRecords: OuraDailyStress[],
+	startDate: Date,
+	endDate: Date
+) {
+	return stressRecords
+		.filter((record) => {
+			const day = new Date(record.day + 'T00:00:00');
+			return day >= startDate && day <= endDate;
+		})
+		.map((record) => ({
+			id: String(record.id),
+			day: record.day,
+			stress_high: record.stress_high,
+			recovery_high: record.recovery_high,
+			day_summary: record.day_summary
 		}));
 }
