@@ -1,0 +1,21 @@
+[scheduler]
+store_run_status = true
+
+[sync.google_calendar]
+enabled = true
+interval_seconds = 1800
+calendar_id = "primary"
+
+[sync.spotify]
+enabled = true
+interval_seconds = 120
+
+[sync.oura_heartrate]
+enabled = true
+interval_seconds = 1800
+lookback_days = 7
+
+[sync.oura_full]
+enabled = false
+interval_seconds = 86400
+lookback_days = 7

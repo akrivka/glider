@@ -105,65 +105,6 @@ in
       };
     };
 
-    # ===== Temporal Configuration =====
-    temporal = {
-      enable = mkOption {
-        type = types.bool;
-        default = true;
-        description = "Enable and configure Temporal dev server for Glider";
-      };
-
-      address = mkOption {
-        type = types.str;
-        default = "localhost:${toString cfg.temporal.port}";
-        defaultText = literalExpression ''"localhost:''${toString cfg.temporal.port}"'';
-        description = "Temporal server address";
-      };
-
-      port = mkOption {
-        type = types.port;
-        default = 7233;
-        description = "Temporal server port";
-      };
-
-      bindAddress = mkOption {
-        type = types.str;
-        default = "127.0.0.1";
-        description = "IP address for Temporal to bind to";
-      };
-
-      taskQueue = mkOption {
-        type = types.str;
-        default = "glider-tasks";
-        description = "Temporal task queue name";
-      };
-
-      namespace = mkOption {
-        type = types.str;
-        default = "default";
-        description = "Temporal namespace";
-      };
-
-      dbPath = mkOption {
-        type = types.str;
-        default = "/var/lib/temporal/temporal.db";
-        description = "Path to Temporal's SQLite database";
-      };
-
-      ui = {
-        enable = mkOption {
-          type = types.bool;
-          default = true;
-          description = "Enable Temporal UI (provided by temporal-cli dev server)";
-        };
-
-        port = mkOption {
-          type = types.port;
-          default = 8233;
-          description = "Port for Temporal UI (typically Temporal port + 1000)";
-        };
-      };
-    };
   };
 
   config = mkIf cfg.enable {
@@ -199,32 +140,6 @@ in
       };
     };
 
-    # ===== Temporal Dev Server =====
-    # Using temporal-cli, same approach as devenv
-    # https://devenv.sh/services/temporal/
-    systemd.services.temporal = mkIf cfg.temporal.enable {
-      description = "Temporal Dev Server";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "network.target" ];
-      serviceConfig = {
-        Type = "simple";
-        ExecStart = lib.concatStringsSep " " [
-          "${pkgs.temporal-cli}/bin/temporal"
-          "server"
-          "start-dev"
-          "--ip ${cfg.temporal.bindAddress}"
-          "--port ${toString cfg.temporal.port}"
-          "--ui-port ${toString cfg.temporal.ui.port}"
-          "--db-filename ${cfg.temporal.dbPath}"
-          "--namespace ${cfg.temporal.namespace}"
-        ];
-        Restart = "on-failure";
-        RestartSec = "5s";
-        StateDirectory = "temporal";
-        DynamicUser = true;
-      };
-    };
-
     # ===== Glider Web Frontend =====
     systemd.services.glider-web = {
       description = "Glider Web Frontend";
@@ -232,10 +147,9 @@ in
         "network.target"
       ]
       ++ lib.optional cfg.surrealdb.enable "surrealdb.service"
-      ++ lib.optional cfg.temporal.enable "temporal.service";
+      ;
       wants =
-        lib.optional cfg.surrealdb.enable "surrealdb.service"
-        ++ lib.optional cfg.temporal.enable "temporal.service";
+        lib.optional cfg.surrealdb.enable "surrealdb.service";
       wantedBy = [ "multi-user.target" ];
 
       serviceConfig = {
@@ -264,19 +178,16 @@ in
         SURREALDB_URL = cfg.surrealdb.url;
         SURREALDB_NS = cfg.surrealdb.namespace;
         SURREALDB_DB = cfg.surrealdb.database;
-        TEMPORAL_ADDRESS = cfg.temporal.address;
       };
     };
 
     # ===== Glider Worker =====
     systemd.services.glider-worker = {
-      description = "Glider Temporal Worker";
+      description = "Glider Scheduler Worker";
       after = [
         "network.target"
       ]
-      ++ lib.optional cfg.surrealdb.enable "surrealdb.service"
-      ++ lib.optional cfg.temporal.enable "temporal.service";
-      requires = lib.optional cfg.temporal.enable "temporal.service";
+      ++ lib.optional cfg.surrealdb.enable "surrealdb.service";
       wantedBy = [ "multi-user.target" ];
 
       serviceConfig = {
@@ -284,7 +195,7 @@ in
         User = "glider";
         Group = "glider";
         WorkingDirectory = cfg.dataDir;
-        ExecStart = "${cfg.package.operator}/bin/python -m glider.entrypoint_worker";
+        ExecStart = "${cfg.package.operator}/bin/python -m glider.scheduler";
         Restart = "always";
         RestartSec = 5;
 
@@ -300,12 +211,11 @@ in
       };
 
       environment = {
-        TEMPORAL_ADDRESS = cfg.temporal.address;
-        TEMPORAL_TASK_QUEUE = cfg.temporal.taskQueue;
         SURREALDB_URL = cfg.surrealdb.url;
         SURREALDB_NS = cfg.surrealdb.namespace;
         SURREALDB_DB = cfg.surrealdb.database;
         GLIDER_SECRETS_DIR = "${cfg.dataDir}/secrets";
+        GLIDER_CONFIG_TOML = "${cfg.dataDir}/config.toml";
       };
     };
   };

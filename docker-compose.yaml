@@ -1,22 +1,20 @@
 services:
-  # Temporal Worker service (same image, different entrypoint)
+  # Scheduler worker service (same image, different entrypoint)
   glider-worker:
     build:
       context: .
       dockerfile: glider-operator/Dockerfile
     environment:
-      - TEMPORAL_ADDRESS=temporal:7233
       - SURREALDB_URL=ws://surrealdb:8000
       - SURREALDB_USER=root
       - SURREALDB_PASS=root
+      - GLIDER_CONFIG_TOML=/app/config.toml
     volumes:
       - ./glider-operator/secrets:/app/secrets
-    command: ["python", "-m", "glider.entrypoint_worker"]
-    depends_on:
-      temporal:
-        condition: service_healthy
+      - ./glider-operator/config.toml:/app/config.toml:ro
+    command: ["python", "-m", "glider.scheduler"]
 
-  # SvelteKit Frontend (direct DB/Temporal access)
+  # SvelteKit Frontend (direct DB access)
   glider-web:
     build:
       context: ./glider-web
@@ -24,63 +22,14 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - TEMPORAL_ADDRESS=temporal:7233
       - SURREALDB_URL=ws://surrealdb:8000
       - SURREALDB_USER=root
       - SURREALDB_PASS=root
       - SURREALDB_NS=glider
       - SURREALDB_DB=glider
     depends_on:
-      temporal:
-        condition: service_healthy
       surrealdb:
         condition: service_started
-
-  # Temporal Server
-  temporal:
-    image: temporalio/auto-setup:latest
-    ports:
-      - "7233:7233"
-    environment:
-      - DB=postgres12
-      - DB_PORT=5432
-      - POSTGRES_USER=temporal
-      - POSTGRES_PWD=temporal
-      - POSTGRES_SEEDS=postgresql
-    healthcheck:
-      test: ["CMD", "temporal", "operator", "cluster", "health"]
-      interval: 10s
-      timeout: 5s
-      retries: 20
-      start_period: 30s
-    depends_on:
-      postgresql:
-        condition: service_healthy
-
-  # PostgreSQL for Temporal
-  postgresql:
-    image: postgres:16
-    environment:
-      - POSTGRES_USER=temporal
-      - POSTGRES_PASSWORD=temporal
-    volumes:
-      - temporal_postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U temporal"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
-  # Temporal UI
-  temporal-ui:
-    image: temporalio/ui:latest
-    ports:
-      - "8080:8080"
-    environment:
-      - TEMPORAL_ADDRESS=temporal:7233
-    depends_on:
-      temporal:
-        condition: service_healthy
 
   # SurrealDB (using memory storage for development)
   surrealdb:
@@ -96,6 +45,3 @@ services:
       - "8002:8080"
     depends_on:
       - surrealdb
-
-volumes:
-  temporal_postgres_data:

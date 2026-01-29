@@ -1,12 +1,15 @@
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
-    temporal_address: str = "localhost:7233"
-    temporal_task_queue: str = "glider-tasks"
+    config_toml_path: Path = Field(
+        default=Path("config.toml"),
+        validation_alias="GLIDER_CONFIG_TOML",
+    )
 
     surrealdb_url: str = "ws://localhost:8001"
     surrealdb_user: str = "root"

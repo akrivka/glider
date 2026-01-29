@@ -17,4 +17,4 @@ COPY glider-operator/glider/ ./glider/
 ENV PATH="/app/.venv/bin:$PATH"
 
 # Default command (can be overridden in docker-compose)
-CMD ["python", "-m", "glider.entrypoint_worker"]
+CMD ["python", "-m", "glider.scheduler"]

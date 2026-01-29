@@ -1,10 +1,19 @@
-"""Oura Ring sync workflow and activities for all data types."""
+"""Oura sync tasks."""
 
+from __future__ import annotations
+
+import argparse
+import asyncio
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 
-from temporalio import activity, workflow
+import logfire
+
+from glider.logging_setup import configure_logfire, configure_logging
+
+logger = logging.getLogger(__name__)
 
 
 class OuraDataType(str, Enum):
@@ -50,16 +59,12 @@ class OuraFullSyncResult:
     sync_end: str = ""
 
 
-# --- Activities ---
-
-
-@activity.defn
 async def fetch_oura_heartrate(start_datetime: str, end_datetime: str) -> list[dict]:
     """Fetch heart rate data from Oura API."""
     from glider.config import settings
     from glider.integrations.oura import OuraClient
 
-    activity.logger.info(f"Fetching Oura heartrate from {start_datetime} to {end_datetime}")
+    logger.info("Fetching Oura heartrate from %s to %s", start_datetime, end_datetime)
 
     client = OuraClient(
         client_id=settings.oura_client_id,
@@ -73,13 +78,12 @@ async def fetch_oura_heartrate(start_datetime: str, end_datetime: str) -> list[d
     return client.get_heartrate(start_datetime=start_dt, end_datetime=end_dt)
 
 
-@activity.defn
 async def fetch_oura_daily_data(data_type: str, start_date: str, end_date: str) -> list[dict]:
     """Fetch daily data from Oura API for a specific data type."""
     from glider.config import settings
     from glider.integrations.oura import OuraClient
 
-    activity.logger.info(f"Fetching Oura {data_type} from {start_date} to {end_date}")
+    logger.info("Fetching Oura %s from %s to %s", data_type, start_date, end_date)
 
     client = OuraClient(
         client_id=settings.oura_client_id,
@@ -108,20 +112,18 @@ async def fetch_oura_daily_data(data_type: str, start_date: str, end_date: str) 
     return fetch_method(start_date=start_dt, end_date=end_dt)
 
 
-@activity.defn
 async def load_oura_sync_state() -> dict | None:
     """Load the last sync state from DB."""
     return await load_oura_sync_state_for_type("heartrate")
 
 
-@activity.defn
 async def load_oura_sync_state_for_type(data_type: str) -> dict | None:
     """Load the last sync state from DB for a specific data type."""
     from surrealdb import AsyncSurreal
 
     from glider.config import settings
 
-    activity.logger.info(f"Loading Oura sync state for {data_type}")
+    logger.info("Loading Oura sync state for %s", data_type)
 
     db = AsyncSurreal(settings.surrealdb_url)
     try:
@@ -142,13 +144,11 @@ async def load_oura_sync_state_for_type(data_type: str) -> dict | None:
         await db.close()
 
 
-@activity.defn
 async def save_oura_sync_state(state: dict) -> None:
     """Save sync state to DB."""
     await save_oura_sync_state_for_type("heartrate", state)
 
 
-@activity.defn
 async def save_oura_sync_state_for_type(data_type: str, state: dict) -> None:
     """Save sync state to DB for a specific data type."""
     from surrealdb import AsyncSurreal
@@ -166,7 +166,6 @@ async def save_oura_sync_state_for_type(data_type: str, state: dict) -> None:
         await db.close()
 
 
-@activity.defn
 async def store_heartrate_samples(samples: list[dict]) -> int:
     """Store heart rate samples in SurrealDB."""
     from surrealdb import AsyncSurreal
@@ -176,7 +175,7 @@ async def store_heartrate_samples(samples: list[dict]) -> int:
     if not samples:
         return 0
 
-    activity.logger.info(f"Storing {len(samples)} heartrate samples")
+    logger.info("Storing %s heartrate samples", len(samples))
 
     db = AsyncSurreal(settings.surrealdb_url)
     try:
@@ -204,7 +203,7 @@ async def store_heartrate_samples(samples: list[dict]) -> int:
                 dt = datetime.fromisoformat(ts_clean)
                 timestamp_ms = int(dt.timestamp() * 1000)
             except ValueError:
-                activity.logger.warning(f"Invalid timestamp: {timestamp}")
+                logger.warning("Invalid timestamp: %s", timestamp)
                 continue
 
             record_id = f"oura_heartrate:{timestamp_ms}"
@@ -219,13 +218,12 @@ async def store_heartrate_samples(samples: list[dict]) -> int:
             await db.upsert(record_id, record)
             stored_count += 1
 
-        activity.logger.info(f"Stored {stored_count} heartrate samples")
+        logger.info("Stored %s heartrate samples", stored_count)
         return stored_count
     finally:
         await db.close()
 
 
-@activity.defn
 async def store_oura_daily_data(data_type: str, records: list[dict]) -> int:
     """Store daily Oura data in SurrealDB."""
     from surrealdb import AsyncSurreal
@@ -235,7 +233,7 @@ async def store_oura_daily_data(data_type: str, records: list[dict]) -> int:
     if not records:
         return 0
 
-    activity.logger.info(f"Storing {len(records)} {data_type} records")
+    logger.info("Storing %s %s records", len(records), data_type)
 
     # Map data type to table name
     table_map = {
@@ -282,34 +280,20 @@ async def store_oura_daily_data(data_type: str, records: list[dict]) -> int:
             await db.upsert(record_id, record_data)
             stored_count += 1
 
-        activity.logger.info(f"Stored {stored_count} {data_type} records")
+        logger.info("Stored %s %s records", stored_count, data_type)
         return stored_count
     finally:
         await db.close()
 
 
-# --- Workflow ---
+async def sync_oura_heartrate(lookback_days: int = 7) -> OuraSyncResult:
+    logger.info("Starting Oura heartrate sync")
 
-
-@workflow.defn
-class OuraHeartrateSyncWorkflow:
-    """Workflow that syncs heart rate data from Oura."""
-
-    def __init__(self) -> None:
-        self._status = "pending"
-        self._samples_count = 0
-
-    @workflow.run
-    async def run(self, input: OuraSyncInput) -> OuraSyncResult:
-        self._status = "loading_state"
-
+    with logfire.span("sync_oura_heartrate", lookback_days=lookback_days):
         # Load previous sync state
-        sync_state = await workflow.execute_activity(
-            load_oura_sync_state,
-            start_to_close_timeout=timedelta(seconds=30),
-        )
+        sync_state = await load_oura_sync_state()
 
-        now = workflow.now()
+        now = datetime.now(UTC)
         end_datetime = now
 
         # Determine start datetime based on last sync or lookback period
@@ -320,51 +304,40 @@ class OuraHeartrateSyncWorkflow:
                 last_sync_clean = last_sync.replace("Z", "+00:00")
                 start_datetime = datetime.fromisoformat(last_sync_clean) - timedelta(minutes=5)
             except ValueError:
-                start_datetime = now - timedelta(days=input.lookback_days)
+                start_datetime = now - timedelta(days=lookback_days)
         else:
             # First sync - look back N days
-            start_datetime = now - timedelta(days=input.lookback_days)
+            start_datetime = now - timedelta(days=lookback_days)
 
         start_str = start_datetime.isoformat()
         end_str = end_datetime.isoformat()
 
         # Fetch heart rate data
-        self._status = "fetching"
-        samples_result = await workflow.execute_activity(
-            fetch_oura_heartrate,
-            args=[start_str, end_str],
-            start_to_close_timeout=timedelta(seconds=120),
-        )
-        samples = samples_result if samples_result is not None else []
-
-        self._samples_count = len(samples)
+        samples = await fetch_oura_heartrate(start_str, end_str)
+        samples = samples if samples is not None else []
 
         # Store samples
-        self._status = "storing"
         stored_count = 0
         if samples:
-            stored_count_result = await workflow.execute_activity(
-                store_heartrate_samples,
-                samples,
-                start_to_close_timeout=timedelta(seconds=120),
-            )
-            stored_count = stored_count_result if stored_count_result is not None else 0
+            stored_count = await store_heartrate_samples(samples)
 
         # Save sync state
-        self._status = "saving_state"
-        await workflow.execute_activity(
-            save_oura_sync_state,
+        await save_oura_sync_state(
             {
                 "last_sync_start": start_str,
                 "last_sync_end": end_str,
                 "last_sync_at": now.isoformat(),
                 "samples_fetched": len(samples),
                 "samples_stored": stored_count,
-            },
-            start_to_close_timeout=timedelta(seconds=30),
+            }
         )
 
-        self._status = "completed"
+        logfire.info(
+            "Oura heartrate sync complete",
+            samples_fetched=len(samples),
+            samples_stored=stored_count,
+        )
+
         return OuraSyncResult(
             samples_fetched=len(samples),
             samples_stored=stored_count,
@@ -372,38 +345,25 @@ class OuraHeartrateSyncWorkflow:
             sync_end=end_str,
         )
 
-    @workflow.query
-    def get_status(self) -> dict:
-        return {
-            "status": self._status,
-            "samples_count": self._samples_count,
-        }
 
+async def sync_oura_full(
+    lookback_days: int = 7,
+    data_types: list[str] | None = None,
+) -> OuraFullSyncResult:
+    logger.info("Starting Oura full sync")
 
-@workflow.defn
-class OuraFullSyncWorkflow:
-    """Workflow that syncs all data types from Oura."""
-
-    def __init__(self) -> None:
-        self._status = "pending"
-        self._current_type = ""
-        self._results: dict[str, OuraSyncResult] = {}
-
-    @workflow.run
-    async def run(self, input: OuraSyncInput) -> OuraFullSyncResult:
-        self._status = "starting"
-
-        now = workflow.now()
+    with logfire.span("sync_oura_full", lookback_days=lookback_days):
+        now = datetime.now(UTC)
         end_date = now
-        start_date = now - timedelta(days=input.lookback_days)
+        start_date = now - timedelta(days=lookback_days)
 
         start_str = start_date.strftime("%Y-%m-%d")
         end_str = end_date.strftime("%Y-%m-%d")
 
         # Determine which data types to sync
-        data_types = (
-            input.data_types
-            if input.data_types
+        types = (
+            data_types
+            if data_types
             else [
                 OuraDataType.DAILY_STRESS.value,
                 OuraDataType.DAILY_ACTIVITY.value,
@@ -416,17 +376,12 @@ class OuraFullSyncWorkflow:
             ]
         )
 
-        for data_type in data_types:
-            self._current_type = data_type
-            self._status = f"syncing_{data_type}"
+        results: dict[str, OuraSyncResult] = {}
 
+        for data_type in types:
             try:
                 # Load sync state for this type
-                sync_state = await workflow.execute_activity(
-                    load_oura_sync_state_for_type,
-                    data_type,
-                    start_to_close_timeout=timedelta(seconds=30),
-                )
+                sync_state = await load_oura_sync_state_for_type(data_type)
 
                 # Determine start date based on last sync
                 type_start_str = start_str
@@ -442,64 +397,72 @@ class OuraFullSyncWorkflow:
                         pass
 
                 # Fetch data
-                records = await workflow.execute_activity(
-                    fetch_oura_daily_data,
-                    args=[data_type, type_start_str, end_str],
-                    start_to_close_timeout=timedelta(seconds=120),
-                )
+                records = await fetch_oura_daily_data(data_type, type_start_str, end_str)
                 records = records if records is not None else []
 
                 # Store data
                 stored_count = 0
                 if records:
-                    stored_result = await workflow.execute_activity(
-                        store_oura_daily_data,
-                        args=[data_type, records],
-                        start_to_close_timeout=timedelta(seconds=120),
-                    )
-                    stored_count = stored_result if stored_result is not None else 0
+                    stored_count = await store_oura_daily_data(data_type, records)
 
                 # Save sync state
-                await workflow.execute_activity(
-                    save_oura_sync_state_for_type,
-                    args=[
-                        data_type,
-                        {
-                            "last_sync_start": type_start_str,
-                            "last_sync_end": end_str,
-                            "last_sync_at": now.isoformat(),
-                            "records_fetched": len(records),
-                            "records_stored": stored_count,
-                        },
-                    ],
-                    start_to_close_timeout=timedelta(seconds=30),
+                await save_oura_sync_state_for_type(
+                    data_type,
+                    {
+                        "last_sync_start": type_start_str,
+                        "last_sync_end": end_str,
+                        "last_sync_at": now.isoformat(),
+                        "records_fetched": len(records),
+                        "records_stored": stored_count,
+                    },
                 )
 
-                self._results[data_type] = OuraSyncResult(
+                results[data_type] = OuraSyncResult(
                     samples_fetched=len(records),
                     samples_stored=stored_count,
                     sync_start=type_start_str,
                     sync_end=end_str,
                 )
 
-            except Exception as e:
-                workflow.logger.error(f"Failed to sync {data_type}: {e}")
+            except Exception as exc:
+                logger.error("Failed to sync %s: %s", data_type, exc)
                 # Continue with other types even if one fails
 
-        self._status = "completed"
+        logfire.info("Oura full sync complete", types_synced=len(results))
+
         return OuraFullSyncResult(
-            results=self._results,
+            results=results,
             sync_start=start_str,
             sync_end=end_str,
         )
 
-    @workflow.query
-    def get_status(self) -> dict:
-        return {
-            "status": self._status,
-            "current_type": self._current_type,
-            "results": {
-                k: {"fetched": v.samples_fetched, "stored": v.samples_stored}
-                for k, v in self._results.items()
-            },
-        }
+
+def _parse_data_types(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def main() -> None:
+    configure_logging()
+    configure_logfire()
+    parser = argparse.ArgumentParser(description="Sync Oura data")
+    parser.add_argument("--mode", choices=["heartrate", "full"], default="heartrate")
+    parser.add_argument("--lookback-days", type=int, default=7)
+    parser.add_argument("--data-types", default="")
+    args = parser.parse_args()
+
+    if args.mode == "heartrate":
+        asyncio.run(sync_oura_heartrate(lookback_days=args.lookback_days))
+    else:
+        data_types = _parse_data_types(args.data_types)
+        asyncio.run(
+            sync_oura_full(
+                lookback_days=args.lookback_days,
+                data_types=data_types or None,
+            )
+        )
+
+
+if __name__ == "__main__":
+    main()

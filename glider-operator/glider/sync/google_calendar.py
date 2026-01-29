@@ -1,14 +1,18 @@
-"""Google Calendar sync workflow and activities."""
+"""Google Calendar sync task."""
 
+from __future__ import annotations
+
+import argparse
+import asyncio
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from temporalio import activity, workflow
+import logfire
 
+from glider.logging_setup import configure_logfire, configure_logging
 
-@dataclass
-class CalendarSyncInput:
-    calendar_id: str = "primary"
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -17,39 +21,12 @@ class CalendarSyncResult:
     sync_token: str | None
 
 
-@dataclass
-class SyncState:
-    calendar_id: str
-    sync_token: str | None
-    last_sync: str
-
-
-@dataclass
-class CalendarEvent:
-    google_id: str
-    calendar_id: str
-    summary: str
-    start: dict
-    end: dict
-    status: str
-    html_link: str | None
-    location: str | None
-    description: str | None
-    created: str | None
-    updated: str | None
-    raw: dict
-
-
-# --- Activities ---
-
-
-@activity.defn
 async def fetch_google_calendar_events(calendar_id: str) -> tuple[list[dict], str | None]:
     """Fetch events from Google Calendar."""
     from glider.config import settings
     from glider.integrations.google_calendar import GoogleCalendarClient
 
-    activity.logger.info(f"Fetching events from calendar: {calendar_id}")
+    logger.info("Fetching events from calendar: %s", calendar_id)
 
     client = GoogleCalendarClient(
         client_secret_path=settings.google_client_secret_path,
@@ -70,7 +47,7 @@ async def fetch_google_calendar_events(calendar_id: str) -> tuple[list[dict], st
         time_min=time_min,
     )
 
-    activity.logger.info(f"Fetched {len(events)} events")
+    logger.info("Fetched %s events", len(events))
     return events, next_sync_token
 
 
@@ -96,7 +73,6 @@ async def _get_sync_token_from_db(calendar_id: str) -> str | None:
         await db.close()
 
 
-@activity.defn
 async def store_calendar_events(events: list[dict], calendar_id: str) -> int:
     """Store calendar events in SurrealDB."""
     from surrealdb import AsyncSurreal
@@ -104,10 +80,10 @@ async def store_calendar_events(events: list[dict], calendar_id: str) -> int:
     from glider.config import settings
 
     if not events:
-        activity.logger.info("No events to store")
+        logger.info("No events to store")
         return 0
 
-    activity.logger.info(f"Storing {len(events)} events in SurrealDB")
+    logger.info("Storing %s events in SurrealDB", len(events))
 
     db = AsyncSurreal(settings.surrealdb_url)
     try:
@@ -127,7 +103,7 @@ async def store_calendar_events(events: list[dict], calendar_id: str) -> int:
             if event.get("status") == "cancelled":
                 record_id = f"google_calendar_events:{google_id}"
                 await db.delete(record_id)
-                activity.logger.info(f"Deleted cancelled event: {google_id}")
+                logger.info("Deleted cancelled event: %s", google_id)
                 continue
 
             event_data = {
@@ -151,20 +127,19 @@ async def store_calendar_events(events: list[dict], calendar_id: str) -> int:
             await db.upsert(record_id, event_data)
             stored_count += 1
 
-        activity.logger.info(f"Stored {stored_count} events")
+        logger.info("Stored %s events", stored_count)
         return stored_count
     finally:
         await db.close()
 
 
-@activity.defn
 async def save_sync_state(calendar_id: str, sync_token: str | None) -> None:
     """Save the sync state for incremental updates."""
     from surrealdb import AsyncSurreal
 
     from glider.config import settings
 
-    activity.logger.info(f"Saving sync state for calendar: {calendar_id}")
+    logger.info("Saving sync state for calendar: %s", calendar_id)
 
     db = AsyncSurreal(settings.surrealdb_url)
     try:
@@ -180,63 +155,29 @@ async def save_sync_state(calendar_id: str, sync_token: str | None) -> None:
         }
 
         await db.upsert(record_id, state_data)
-        activity.logger.info("Sync state saved")
+        logger.info("Sync state saved")
     finally:
         await db.close()
 
 
-# --- Workflow ---
+async def sync_google_calendar(calendar_id: str = "primary") -> CalendarSyncResult:
+    with logfire.span("sync_google_calendar", calendar_id=calendar_id):
+        events, next_sync_token = await fetch_google_calendar_events(calendar_id)
+        events_synced = await store_calendar_events(events, calendar_id)
+        await save_sync_state(calendar_id, next_sync_token)
+        logfire.info("Google Calendar sync complete", events_synced=events_synced)
+        return CalendarSyncResult(events_synced=events_synced, sync_token=next_sync_token)
 
 
-@workflow.defn
-class GoogleCalendarSyncWorkflow:
-    """Workflow that syncs Google Calendar events to SurrealDB."""
+def main() -> None:
+    configure_logging()
+    configure_logfire()
+    parser = argparse.ArgumentParser(description="Sync Google Calendar to SurrealDB")
+    parser.add_argument("--calendar-id", default="primary")
+    args = parser.parse_args()
 
-    def __init__(self) -> None:
-        self._status = "pending"
-        self._events_synced = 0
+    asyncio.run(sync_google_calendar(calendar_id=args.calendar_id))
 
-    @workflow.run
-    async def run(self, input: CalendarSyncInput) -> CalendarSyncResult:
-        self._status = "fetching"
 
-        # Fetch events from Google Calendar
-        events, next_sync_token = await workflow.execute_activity(
-            fetch_google_calendar_events,
-            input.calendar_id,
-            start_to_close_timeout=timedelta(minutes=5),
-        )
-
-        self._status = "storing"
-
-        # Store events in SurrealDB
-        events_synced_result = await workflow.execute_activity(
-            store_calendar_events,
-            args=[events, input.calendar_id],
-            start_to_close_timeout=timedelta(minutes=5),
-        )
-        events_synced = events_synced_result if events_synced_result is not None else 0
-        self._events_synced = events_synced
-
-        self._status = "saving_state"
-
-        # Save sync state for incremental updates
-        await workflow.execute_activity(
-            save_sync_state,
-            args=[input.calendar_id, next_sync_token],
-            start_to_close_timeout=timedelta(minutes=1),
-        )
-
-        self._status = "completed"
-
-        return CalendarSyncResult(
-            events_synced=events_synced,
-            sync_token=next_sync_token,
-        )
-
-    @workflow.query
-    def get_status(self) -> dict:
-        return {
-            "status": self._status,
-            "events_synced": self._events_synced,
-        }
+if __name__ == "__main__":
+    main()

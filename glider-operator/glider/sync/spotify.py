@@ -1,16 +1,18 @@
-"""Spotify listening tracking workflow using recently-played endpoint.
+"""Spotify listening tracking sync task."""
 
-This approach is based on Your Spotify's scrobbling architecture:
-- Polls every 2 minutes instead of real-time
-- Uses /me/player/recently-played with 2-hour lookback
-- Deduplicates using ±30 second tolerance
-- Much simpler and more reliable than real-time polling
-"""
+from __future__ import annotations
 
+import argparse
+import asyncio
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from temporalio import activity, workflow
+import logfire
+
+from glider.logging_setup import configure_logfire, configure_logging
+
+logger = logging.getLogger(__name__)
 
 # Lookback window: fetch tracks played in last 2 hours to handle gaps
 LOOKBACK_HOURS = 2
@@ -20,16 +22,7 @@ DUPLICATE_TOLERANCE_SECONDS = 30
 
 
 @dataclass
-class SpotifyPollInput:
-    """Input for the polling workflow."""
-
-    pass
-
-
-@dataclass
 class SpotifyPollResult:
-    """Result of a poll cycle."""
-
     tracks_fetched: int
     tracks_recorded: int
     latest_played_at: str | None
@@ -55,16 +48,12 @@ def _extract_track_info(item: dict) -> dict:
     }
 
 
-# --- Activities ---
-
-
-@activity.defn
 async def fetch_recently_played(after_timestamp_ms: int | None) -> list[dict]:
     """Fetch recently played tracks from Spotify API."""
     from glider.config import settings
     from glider.integrations.spotify import SpotifyClient
 
-    activity.logger.info(f"Fetching recently played tracks (after={after_timestamp_ms})")
+    logger.info("Fetching recently played tracks (after=%s)", after_timestamp_ms)
 
     client = SpotifyClient(
         client_id=settings.spotify_client_id,
@@ -76,14 +65,13 @@ async def fetch_recently_played(after_timestamp_ms: int | None) -> list[dict]:
     return [_extract_track_info(item) for item in items]
 
 
-@activity.defn
 async def get_last_scrobble_timestamp() -> int | None:
     """Get the timestamp of the most recent scrobble from the database."""
     from surrealdb import AsyncSurreal
 
     from glider.config import settings
 
-    activity.logger.info("Getting last scrobble timestamp")
+    logger.info("Getting last scrobble timestamp")
 
     db = AsyncSurreal(settings.surrealdb_url)
     try:
@@ -116,7 +104,6 @@ async def get_last_scrobble_timestamp() -> int | None:
         await db.close()
 
 
-@activity.defn
 async def check_duplicate(track_id: str, played_at: str) -> bool:
     """Check if a track play already exists within the tolerance window."""
     from surrealdb import AsyncSurreal
@@ -159,14 +146,13 @@ async def check_duplicate(track_id: str, played_at: str) -> bool:
         await db.close()
 
 
-@activity.defn
 async def record_listening_event(event: dict) -> str:
     """Record a listening event in the DB."""
     from surrealdb import AsyncSurreal
 
     from glider.config import settings
 
-    activity.logger.info(f"Recording: {event.get('track_name')}")
+    logger.info("Recording: %s", event.get("track_name"))
 
     db = AsyncSurreal(settings.surrealdb_url)
     try:
@@ -194,59 +180,33 @@ async def record_listening_event(event: dict) -> str:
         event["_synced_at"] = datetime.now(UTC).isoformat() + "Z"
 
         await db.upsert(record_id, event)
-        activity.logger.info(f"Recorded: {record_id}")
+        logger.info("Recorded: %s", record_id)
         return record_id
     finally:
         await db.close()
 
 
-# --- Workflow ---
+async def sync_spotify() -> SpotifyPollResult:
+    logger.info("Starting Spotify sync")
 
-
-@workflow.defn
-class SpotifyListeningWorkflow:
-    """Workflow that fetches recently played tracks and records new scrobbles.
-
-    This uses Spotify's /me/player/recently-played endpoint instead of
-    real-time polling. Benefits:
-    - Works even if the service was offline (catches up on history)
-    - Provides exact played_at timestamps from Spotify
-    - Much simpler logic - no state machine needed
-    - Lower API usage (every 2 minutes vs every 7 seconds)
-    """
-
-    def __init__(self) -> None:
-        self._status = "pending"
-        self._tracks_recorded = 0
-
-    @workflow.run
-    async def run(self, input: SpotifyPollInput) -> SpotifyPollResult:
-        self._status = "fetching_timestamp"
-
+    with logfire.span("sync_spotify"):
         # Get last scrobble timestamp to determine lookback
-        last_timestamp = await workflow.execute_activity(
-            get_last_scrobble_timestamp,
-            start_to_close_timeout=timedelta(seconds=30),
-        )
+        last_timestamp = await get_last_scrobble_timestamp()
 
         # Calculate lookback: use last timestamp minus 2 hours, or None for first run
         if last_timestamp:
             lookback_ms = last_timestamp - (LOOKBACK_HOURS * 60 * 60 * 1000)
         else:
             lookback_ms = None
-            workflow.logger.info("First run - fetching all available history")
+            logger.info("First run - fetching all available history")
 
         # Fetch recently played tracks
-        self._status = "fetching_tracks"
-        tracks = await workflow.execute_activity(
-            fetch_recently_played,
-            lookback_ms,
-            start_to_close_timeout=timedelta(seconds=60),
-        )
+        tracks = await fetch_recently_played(lookback_ms)
 
-        workflow.logger.info(f"Fetched {len(tracks)} tracks from Spotify")
+        logger.info("Fetched %s tracks from Spotify", len(tracks))
 
         if not tracks:
+            logfire.info("Spotify sync complete", tracks_fetched=0, tracks_recorded=0)
             return SpotifyPollResult(
                 tracks_fetched=0,
                 tracks_recorded=0,
@@ -254,7 +214,6 @@ class SpotifyListeningWorkflow:
             )
 
         # Process each track - check for duplicates and record new ones
-        self._status = "recording"
         recorded_count = 0
         latest_played_at = None
 
@@ -270,27 +229,27 @@ class SpotifyListeningWorkflow:
                 latest_played_at = played_at
 
             # Check for duplicates
-            is_duplicate = await workflow.execute_activity(
-                check_duplicate,
-                args=[track_id, played_at],
-                start_to_close_timeout=timedelta(seconds=30),
-            )
+            is_duplicate = await check_duplicate(track_id, played_at)
 
             if is_duplicate:
-                workflow.logger.debug(f"Skipping duplicate: {track.get('track_name')}")
+                logger.debug("Skipping duplicate: %s", track.get("track_name"))
                 continue
 
             # Record new track
-            await workflow.execute_activity(
-                record_listening_event,
-                track,
-                start_to_close_timeout=timedelta(seconds=30),
-            )
+            await record_listening_event(track)
             recorded_count += 1
-            self._tracks_recorded = recorded_count
 
-        self._status = "completed"
-        workflow.logger.info(f"Recorded {recorded_count} new tracks out of {len(tracks)} fetched")
+        logger.info(
+            "Recorded %s new tracks out of %s fetched",
+            recorded_count,
+            len(tracks),
+        )
+        logfire.info(
+            "Spotify sync complete",
+            tracks_fetched=len(tracks),
+            tracks_recorded=recorded_count,
+            latest_played_at=latest_played_at,
+        )
 
         return SpotifyPollResult(
             tracks_fetched=len(tracks),
@@ -298,9 +257,15 @@ class SpotifyListeningWorkflow:
             latest_played_at=latest_played_at,
         )
 
-    @workflow.query
-    def get_status(self) -> dict:
-        return {
-            "status": self._status,
-            "tracks_recorded": self._tracks_recorded,
-        }
+
+def main() -> None:
+    configure_logging()
+    configure_logfire()
+    parser = argparse.ArgumentParser(description="Sync Spotify listening history")
+    parser.parse_args()
+
+    asyncio.run(sync_spotify())
+
+
+if __name__ == "__main__":
+    main()
