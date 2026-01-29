@@ -10,12 +10,7 @@ calendar_id = "primary"
 enabled = true
 interval_seconds = 120
 
-[sync.oura_heartrate]
+[sync.oura]
 enabled = true
-interval_seconds = 1800
-lookback_days = 7
-
-[sync.oura_full]
-enabled = false
-interval_seconds = 86400
-lookback_days = 7
+interval_seconds = 3600
+lookback_days = 1

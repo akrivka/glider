@@ -11,6 +11,8 @@ from enum import Enum
 
 import logfire
 
+from glider.config import settings
+from glider.integrations.oura import OuraClient
 from glider.logging_setup import configure_logfire, configure_logging
 
 logger = logging.getLogger(__name__)
@@ -28,6 +30,21 @@ class OuraDataType(str, Enum):
     SLEEP = "sleep"
     SESSION = "session"
     WORKOUT = "workout"
+
+
+DEFAULT_DATA_TYPES = [
+    OuraDataType.HEARTRATE.value,
+    OuraDataType.DAILY_STRESS.value,
+    OuraDataType.DAILY_ACTIVITY.value,
+    OuraDataType.DAILY_READINESS.value,
+    OuraDataType.DAILY_SLEEP.value,
+    OuraDataType.DAILY_SPO2.value,
+    OuraDataType.SLEEP.value,
+    OuraDataType.SESSION.value,
+    OuraDataType.WORKOUT.value,
+]
+
+HEARTRATE_MIN_WINDOW_HOURS = 24
 
 
 @dataclass
@@ -51,26 +68,27 @@ class OuraSyncResult:
 
 
 @dataclass
-class OuraFullSyncResult:
-    """Result of a full sync cycle across all data types."""
+class OuraSyncSummary:
+    """Result of a sync cycle across all data types."""
 
     results: dict[str, OuraSyncResult] = field(default_factory=dict)
     sync_start: str = ""
     sync_end: str = ""
 
 
-async def fetch_oura_heartrate(start_datetime: str, end_datetime: str) -> list[dict]:
-    """Fetch heart rate data from Oura API."""
-    from glider.config import settings
-    from glider.integrations.oura import OuraClient
-
-    logger.info("Fetching Oura heartrate from %s to %s", start_datetime, end_datetime)
-
-    client = OuraClient(
+def _get_oura_client() -> OuraClient:
+    return OuraClient(
         client_id=settings.oura_client_id,
         client_secret=settings.oura_client_secret,
         tokens_path=settings.oura_tokens_path,
     )
+
+
+async def fetch_oura_heartrate(start_datetime: str, end_datetime: str) -> list[dict]:
+    """Fetch heart rate data from Oura API."""
+    logger.info("Fetching Oura heartrate from %s to %s", start_datetime, end_datetime)
+
+    client = _get_oura_client()
 
     start_dt = datetime.fromisoformat(start_datetime.replace("Z", "+00:00"))
     end_dt = datetime.fromisoformat(end_datetime.replace("Z", "+00:00"))
@@ -80,16 +98,9 @@ async def fetch_oura_heartrate(start_datetime: str, end_datetime: str) -> list[d
 
 async def fetch_oura_daily_data(data_type: str, start_date: str, end_date: str) -> list[dict]:
     """Fetch daily data from Oura API for a specific data type."""
-    from glider.config import settings
-    from glider.integrations.oura import OuraClient
-
     logger.info("Fetching Oura %s from %s to %s", data_type, start_date, end_date)
 
-    client = OuraClient(
-        client_id=settings.oura_client_id,
-        client_secret=settings.oura_client_secret,
-        tokens_path=settings.oura_tokens_path,
-    )
+    client = _get_oura_client()
 
     start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
     end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
@@ -110,11 +121,6 @@ async def fetch_oura_daily_data(data_type: str, start_date: str, end_date: str) 
         raise ValueError(f"Unknown data type: {data_type}")
 
     return fetch_method(start_date=start_dt, end_date=end_dt)
-
-
-async def load_oura_sync_state() -> dict | None:
-    """Load the last sync state from DB."""
-    return await load_oura_sync_state_for_type("heartrate")
 
 
 async def load_oura_sync_state_for_type(data_type: str) -> dict | None:
@@ -142,11 +148,6 @@ async def load_oura_sync_state_for_type(data_type: str) -> dict | None:
         return None
     finally:
         await db.close()
-
-
-async def save_oura_sync_state(state: dict) -> None:
-    """Save sync state to DB."""
-    await save_oura_sync_state_for_type("heartrate", state)
 
 
 async def save_oura_sync_state_for_type(data_type: str, state: dict) -> None:
@@ -286,155 +287,139 @@ async def store_oura_daily_data(data_type: str, records: list[dict]) -> int:
         await db.close()
 
 
-async def sync_oura_heartrate(lookback_days: int = 7) -> OuraSyncResult:
-    logger.info("Starting Oura heartrate sync")
-
-    with logfire.span("sync_oura_heartrate", lookback_days=lookback_days):
-        # Load previous sync state
-        sync_state = await load_oura_sync_state()
-
-        now = datetime.now(UTC)
-        end_datetime = now
-
-        # Determine start datetime based on last sync or lookback period
-        if sync_state and sync_state.get("last_sync_end"):
-            # Continue from last sync, with a small overlap to catch any missed data
-            last_sync = sync_state["last_sync_end"]
-            try:
-                last_sync_clean = last_sync.replace("Z", "+00:00")
-                start_datetime = datetime.fromisoformat(last_sync_clean) - timedelta(minutes=5)
-            except ValueError:
-                start_datetime = now - timedelta(days=lookback_days)
-        else:
-            # First sync - look back N days
-            start_datetime = now - timedelta(days=lookback_days)
-
-        start_str = start_datetime.isoformat()
-        end_str = end_datetime.isoformat()
-
-        # Fetch heart rate data
-        samples = await fetch_oura_heartrate(start_str, end_str)
-        samples = samples if samples is not None else []
-
-        # Store samples
-        stored_count = 0
-        if samples:
-            stored_count = await store_heartrate_samples(samples)
-
-        # Save sync state
-        await save_oura_sync_state(
-            {
-                "last_sync_start": start_str,
-                "last_sync_end": end_str,
-                "last_sync_at": now.isoformat(),
-                "samples_fetched": len(samples),
-                "samples_stored": stored_count,
-            }
-        )
-
-        logfire.info(
-            "Oura heartrate sync complete",
-            samples_fetched=len(samples),
-            samples_stored=stored_count,
-        )
-
-        return OuraSyncResult(
-            samples_fetched=len(samples),
-            samples_stored=stored_count,
-            sync_start=start_str,
-            sync_end=end_str,
-        )
+def _normalize_data_types(data_types: list[str] | None) -> list[str]:
+    types = data_types or []
+    if not types:
+        return DEFAULT_DATA_TYPES
+    return [item.strip() for item in types if item.strip()]
 
 
-async def sync_oura_full(
+def _resolve_heartrate_window(
+    sync_state: dict | None,
+    now: datetime,
+    lookback_days: int,
+    force_lookback: bool,
+) -> tuple[str, str]:
+    # Always pull a generous rolling window, and go further back if we're behind.
+    start_datetime = now - timedelta(hours=HEARTRATE_MIN_WINDOW_HOURS)
+    if lookback_days > 1:
+        start_datetime = min(start_datetime, now - timedelta(days=lookback_days))
+
+    if not force_lookback and sync_state and sync_state.get("last_sync_end"):
+        last_sync = sync_state["last_sync_end"]
+        try:
+            last_sync_clean = last_sync.replace("Z", "+00:00")
+            last_sync_dt = datetime.fromisoformat(last_sync_clean)
+            start_datetime = min(start_datetime, last_sync_dt - timedelta(minutes=5))
+        except ValueError:
+            pass
+
+    return start_datetime.isoformat(), now.isoformat()
+
+
+def _resolve_daily_window(
+    sync_state: dict | None,
+    now: datetime,
+    lookback_days: int,
+    force_lookback: bool,
+) -> tuple[str, str]:
+    end_str = now.strftime("%Y-%m-%d")
+    start_str = (now - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
+
+    if not force_lookback and sync_state and sync_state.get("last_sync_end"):
+        last_sync = sync_state["last_sync_end"]
+        try:
+            last_sync_clean = last_sync.replace("Z", "+00:00")
+            last_sync_dt = datetime.fromisoformat(last_sync_clean)
+            overlap_start = last_sync_dt - timedelta(days=1)
+            start_str = overlap_start.strftime("%Y-%m-%d")
+        except ValueError:
+            pass
+
+    return start_str, end_str
+
+
+async def sync_oura(
     lookback_days: int = 7,
     data_types: list[str] | None = None,
-) -> OuraFullSyncResult:
-    logger.info("Starting Oura full sync")
+    force_lookback: bool = False,
+) -> OuraSyncSummary:
+    logger.info("Starting Oura sync")
 
-    with logfire.span("sync_oura_full", lookback_days=lookback_days):
-        now = datetime.now(UTC)
-        end_date = now
-        start_date = now - timedelta(days=lookback_days)
+    types = _normalize_data_types(data_types)
+    now = datetime.now(UTC)
+    results: dict[str, OuraSyncResult] = {}
 
-        start_str = start_date.strftime("%Y-%m-%d")
-        end_str = end_date.strftime("%Y-%m-%d")
-
-        # Determine which data types to sync
-        types = (
-            data_types
-            if data_types
-            else [
-                OuraDataType.DAILY_STRESS.value,
-                OuraDataType.DAILY_ACTIVITY.value,
-                OuraDataType.DAILY_READINESS.value,
-                OuraDataType.DAILY_SLEEP.value,
-                OuraDataType.DAILY_SPO2.value,
-                OuraDataType.SLEEP.value,
-                OuraDataType.SESSION.value,
-                OuraDataType.WORKOUT.value,
-            ]
-        )
-
-        results: dict[str, OuraSyncResult] = {}
-
+    with logfire.span(
+        "sync_oura",
+        lookback_days=lookback_days,
+        types=types,
+        force_lookback=force_lookback,
+    ):
         for data_type in types:
             try:
-                # Load sync state for this type
-                sync_state = await load_oura_sync_state_for_type(data_type)
+                with logfire.span("sync_oura_type", data_type=data_type):
+                    sync_state = await load_oura_sync_state_for_type(data_type)
 
-                # Determine start date based on last sync
-                type_start_str = start_str
-                if sync_state and sync_state.get("last_sync_end"):
-                    last_sync = sync_state["last_sync_end"]
-                    try:
-                        # Go back 1 day for overlap
-                        last_sync_clean = last_sync.replace("Z", "+00:00")
-                        last_sync_dt = datetime.fromisoformat(last_sync_clean)
-                        overlap_start = last_sync_dt - timedelta(days=1)
-                        type_start_str = overlap_start.strftime("%Y-%m-%d")
-                    except ValueError:
-                        pass
-
-                # Fetch data
-                records = await fetch_oura_daily_data(data_type, type_start_str, end_str)
-                records = records if records is not None else []
-
-                # Store data
-                stored_count = 0
-                if records:
-                    stored_count = await store_oura_daily_data(data_type, records)
-
-                # Save sync state
-                await save_oura_sync_state_for_type(
-                    data_type,
-                    {
-                        "last_sync_start": type_start_str,
-                        "last_sync_end": end_str,
-                        "last_sync_at": now.isoformat(),
-                        "records_fetched": len(records),
-                        "records_stored": stored_count,
-                    },
-                )
-
-                results[data_type] = OuraSyncResult(
-                    samples_fetched=len(records),
-                    samples_stored=stored_count,
-                    sync_start=type_start_str,
-                    sync_end=end_str,
-                )
-
+                    if data_type == OuraDataType.HEARTRATE.value:
+                        start_str, end_str = _resolve_heartrate_window(
+                            sync_state, now, lookback_days, force_lookback
+                        )
+                        samples = await fetch_oura_heartrate(start_str, end_str)
+                        samples = samples if samples is not None else []
+                        stored_count = await store_heartrate_samples(samples) if samples else 0
+                        await save_oura_sync_state_for_type(
+                            data_type,
+                            {
+                                "last_sync_start": start_str,
+                                "last_sync_end": end_str,
+                                "last_sync_at": now.isoformat(),
+                                "samples_fetched": len(samples),
+                                "samples_stored": stored_count,
+                            },
+                        )
+                        results[data_type] = OuraSyncResult(
+                            samples_fetched=len(samples),
+                            samples_stored=stored_count,
+                            sync_start=start_str,
+                            sync_end=end_str,
+                        )
+                    else:
+                        start_str, end_str = _resolve_daily_window(
+                            sync_state, now, lookback_days, force_lookback
+                        )
+                        records = await fetch_oura_daily_data(data_type, start_str, end_str)
+                        records = records if records is not None else []
+                        stored_count = (
+                            await store_oura_daily_data(data_type, records) if records else 0
+                        )
+                        await save_oura_sync_state_for_type(
+                            data_type,
+                            {
+                                "last_sync_start": start_str,
+                                "last_sync_end": end_str,
+                                "last_sync_at": now.isoformat(),
+                                "records_fetched": len(records),
+                                "records_stored": stored_count,
+                            },
+                        )
+                        results[data_type] = OuraSyncResult(
+                            samples_fetched=len(records),
+                            samples_stored=stored_count,
+                            sync_start=start_str,
+                            sync_end=end_str,
+                        )
             except Exception as exc:
                 logger.error("Failed to sync %s: %s", data_type, exc)
-                # Continue with other types even if one fails
+                logfire.exception("Oura sync failed", data_type=data_type)
 
-        logfire.info("Oura full sync complete", types_synced=len(results))
+    logfire.info("Oura sync complete", types_synced=len(results))
 
-        return OuraFullSyncResult(
-            results=results,
-            sync_start=start_str,
-            sync_end=end_str,
-        )
+    return OuraSyncSummary(
+        results=results,
+        sync_start=now.isoformat(),
+        sync_end=now.isoformat(),
+    )
 
 
 def _parse_data_types(value: str | None) -> list[str]:
@@ -447,21 +432,23 @@ def main() -> None:
     configure_logging()
     configure_logfire()
     parser = argparse.ArgumentParser(description="Sync Oura data")
-    parser.add_argument("--mode", choices=["heartrate", "full"], default="heartrate")
+    parser.add_argument("--mode", choices=["heartrate", "full"], default="full")
     parser.add_argument("--lookback-days", type=int, default=7)
     parser.add_argument("--data-types", default="")
+    parser.add_argument("--force-lookback", action="store_true")
     args = parser.parse_args()
 
-    if args.mode == "heartrate":
-        asyncio.run(sync_oura_heartrate(lookback_days=args.lookback_days))
-    else:
-        data_types = _parse_data_types(args.data_types)
-        asyncio.run(
-            sync_oura_full(
-                lookback_days=args.lookback_days,
-                data_types=data_types or None,
-            )
+    data_types = _parse_data_types(args.data_types)
+    if args.mode == "heartrate" and not data_types:
+        data_types = [OuraDataType.HEARTRATE.value]
+
+    asyncio.run(
+        sync_oura(
+            lookback_days=args.lookback_days,
+            data_types=data_types or None,
+            force_lookback=args.force_lookback,
         )
+    )
 
 
 if __name__ == "__main__":

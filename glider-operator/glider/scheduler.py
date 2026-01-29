@@ -16,7 +16,7 @@ import logfire
 from glider.config import settings
 from glider.logging_setup import configure_logfire, configure_logging
 from glider.sync.google_calendar import sync_google_calendar
-from glider.sync.oura import sync_oura_full, sync_oura_heartrate
+from glider.sync.oura import DEFAULT_DATA_TYPES, sync_oura
 from glider.sync.spotify import sync_spotify
 
 try:
@@ -87,32 +87,47 @@ def _build_tasks(config: dict) -> tuple[list[TaskSpec], bool]:
             )
         )
 
-    oura_heartrate_cfg = sync_config.get("oura_heartrate", {})
-    if oura_heartrate_cfg.get("enabled", False):
-        interval = _get_required_int(oura_heartrate_cfg, "interval_seconds", "oura_heartrate")
-        lookback_days = oura_heartrate_cfg.get("lookback_days", 7)
+    oura_cfg = sync_config.get("oura", {})
+    if oura_cfg.get("enabled", False):
+        interval = _get_required_int(oura_cfg, "interval_seconds", "oura")
+        lookback_days = oura_cfg.get("lookback_days", 7)
+        data_types = oura_cfg.get("data_types")
         tasks.append(
             TaskSpec(
-                name="oura_heartrate",
+                name="oura",
                 interval_seconds=interval,
-                handler=sync_oura_heartrate,
-                kwargs={"lookback_days": lookback_days},
-            )
-        )
-
-    oura_full_cfg = sync_config.get("oura_full", {})
-    if oura_full_cfg.get("enabled", False):
-        interval = _get_required_int(oura_full_cfg, "interval_seconds", "oura_full")
-        lookback_days = oura_full_cfg.get("lookback_days", 7)
-        data_types = oura_full_cfg.get("data_types")
-        tasks.append(
-            TaskSpec(
-                name="oura_full",
-                interval_seconds=interval,
-                handler=sync_oura_full,
+                handler=sync_oura,
                 kwargs={"lookback_days": lookback_days, "data_types": data_types},
             )
         )
+    elif "oura" not in sync_config:
+        oura_heartrate_cfg = sync_config.get("oura_heartrate", {})
+        oura_full_cfg = sync_config.get("oura_full", {})
+        if oura_heartrate_cfg.get("enabled", False) or oura_full_cfg.get("enabled", False):
+            interval = None
+            lookback_days = 7
+            data_types: list[str] = []
+
+            if oura_heartrate_cfg.get("enabled", False):
+                interval = _get_required_int(
+                    oura_heartrate_cfg, "interval_seconds", "oura_heartrate"
+                )
+                lookback_days = oura_heartrate_cfg.get("lookback_days", lookback_days)
+                data_types.append("heartrate")
+
+            if oura_full_cfg.get("enabled", False):
+                interval = _get_required_int(oura_full_cfg, "interval_seconds", "oura_full")
+                lookback_days = oura_full_cfg.get("lookback_days", lookback_days)
+                data_types.extend(oura_full_cfg.get("data_types") or DEFAULT_DATA_TYPES)
+
+            tasks.append(
+                TaskSpec(
+                    name="oura",
+                    interval_seconds=interval or settings.oura_sync_interval_minutes * 60,
+                    handler=sync_oura,
+                    kwargs={"lookback_days": lookback_days, "data_types": data_types or None},
+                )
+            )
 
     return tasks, bool(store_run_status)
 
