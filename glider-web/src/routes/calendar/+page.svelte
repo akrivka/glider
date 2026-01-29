@@ -586,29 +586,31 @@
 						{/if}
 
 						<!-- Oura Stress Column -->
-						{@const dayStress = getStressForDay(stressRecords, day.date)}
-						<div
-							class="relative w-8 flex-shrink-0 border-l border-slate-800/30 bg-slate-900/20"
-							style="height: {HOURS.length * HOUR_HEIGHT}px"
-							onmouseenter={(e) => handleStressHover(e, dayStress)}
-							onmousemove={(e) => handleStressHover(e, dayStress)}
-							onmouseleave={() => (hoveredStress = null)}
-							role="img"
-							aria-label="Stress data"
-						>
-							<!-- Stress icon at top (lightning bolt for stress) -->
-							<div class="absolute top-0 left-0 right-0 flex justify-center pt-1">
-								<svg class="h-3 w-3 text-amber-500/60" viewBox="0 0 24 24" fill="currentColor">
-									<path d="M13 0L0 13h9v11l13-13h-9z"/>
-								</svg>
-							</div>
-
-							<!-- Stress level as full-column background -->
+						{#if true}
+							{@const dayStress = getStressForDay(stressRecords, day.date)}
 							<div
-								class="absolute inset-x-0 top-4 bottom-0 mx-0.5 rounded-sm"
-								style="background-color: {getStressColor(dayStress?.stress_high ?? null, dayStress?.recovery_high ?? null)};"
-							></div>
-						</div>
+								class="relative w-8 flex-shrink-0 border-l border-slate-800/30 bg-slate-900/20"
+								style="height: {HOURS.length * HOUR_HEIGHT}px"
+								onmouseenter={(e) => handleStressHover(e, dayStress)}
+								onmousemove={(e) => handleStressHover(e, dayStress)}
+								onmouseleave={() => (hoveredStress = null)}
+								role="img"
+								aria-label="Stress data"
+							>
+								<!-- Stress icon at top (lightning bolt for stress) -->
+								<div class="absolute top-0 left-0 right-0 flex justify-center pt-1">
+									<svg class="h-3 w-3 text-amber-500/60" viewBox="0 0 24 24" fill="currentColor">
+										<path d="M13 0L0 13h9v11l13-13h-9z"/>
+									</svg>
+								</div>
+
+								<!-- Stress level as full-column background -->
+								<div
+									class="absolute inset-x-0 top-4 bottom-0 mx-0.5 rounded-sm"
+									style="background-color: {getStressColor(dayStress?.stress_high ?? null, dayStress?.recovery_high ?? null)};"
+								></div>
+							</div>
+						{/if}
 					</div>
 				{/each}
 			</div>
