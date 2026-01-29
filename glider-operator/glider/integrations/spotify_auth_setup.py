@@ -153,9 +153,7 @@ def main() -> None:
             {
                 "access_token": data["access_token"],
                 "refresh_token": data["refresh_token"],
-                "expires_at": time.time()
-                + data["expires_in"]
-                - TOKEN_REFRESH_BUFFER_SECONDS,
+                "expires_at": time.time() + data["expires_in"] - TOKEN_REFRESH_BUFFER_SECONDS,
             },
             f,
         )

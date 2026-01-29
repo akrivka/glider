@@ -6,22 +6,6 @@ from temporalio.client import Client
 from temporalio.worker import Worker
 
 from glider.config import settings
-
-# Configure Logfire for OpenTelemetry tracing and logging
-logfire.configure(
-    service_name=settings.logfire_service_name,
-    environment=settings.logfire_environment,
-    token=settings.logfire_token,
-    console=logfire.ConsoleOptions(
-        colors="auto",
-        verbose=True,
-    ) if settings.logfire_console_enabled else False,
-    send_to_logfire="if-token-present",
-)
-
-# Instrument httpx for automatic tracing of HTTP requests
-logfire.instrument_httpx()
-
 from glider.workflows.activities import sleep_activity, store_in_surrealdb
 from glider.workflows.demo import DemoWorkflow
 from glider.workflows.google_calendar import (
@@ -44,6 +28,24 @@ from glider.workflows.spotify import (
     get_last_scrobble_timestamp,
     record_listening_event,
 )
+
+# Configure Logfire for OpenTelemetry tracing and logging
+logfire.configure(
+    service_name=settings.logfire_service_name,
+    environment=settings.logfire_environment,
+    token=settings.logfire_token,
+    console=logfire.ConsoleOptions(
+        colors="auto",
+        verbose=True,
+    )
+    if settings.logfire_console_enabled
+    else False,
+    send_to_logfire="if-token-present",
+)
+
+# Instrument httpx for automatic tracing of HTTP requests
+logfire.instrument_httpx()
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

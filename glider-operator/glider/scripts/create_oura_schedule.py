@@ -4,11 +4,13 @@ Script to create Temporal schedules for Oura data sync.
 Usage:
     python -m glider.scripts.create_oura_schedule
 
-This creates schedules that run OuraHeartrateSyncWorkflow and OuraFullSyncWorkflow at configured intervals.
+This creates schedules that run OuraHeartrateSyncWorkflow and OuraFullSyncWorkflow at
+configured intervals.
 """
 
 import asyncio
 from datetime import timedelta
+from typing import Any
 
 from temporalio.client import (
     Client,
@@ -19,7 +21,7 @@ from temporalio.client import (
 )
 
 from glider.config import settings
-from glider.workflows.oura import OuraHeartrateSyncWorkflow, OuraFullSyncWorkflow, OuraSyncInput
+from glider.workflows.oura import OuraFullSyncWorkflow, OuraHeartrateSyncWorkflow, OuraSyncInput
 
 HEARTRATE_SCHEDULE_ID = "oura-heartrate-sync-schedule"
 FULL_SYNC_SCHEDULE_ID = "oura-full-sync-schedule"
@@ -28,7 +30,7 @@ FULL_SYNC_SCHEDULE_ID = "oura-full-sync-schedule"
 async def create_schedule_if_not_exists(
     client: Client,
     schedule_id: str,
-    workflow_class: type,
+    workflow_class: Any,
     workflow_id: str,
     interval_minutes: int,
 ) -> bool:
@@ -55,7 +57,9 @@ async def create_schedule_if_not_exists(
                 id=workflow_id,
                 task_queue=settings.temporal_task_queue,
             ),
-            spec=ScheduleSpec(intervals=[ScheduleIntervalSpec(every=timedelta(minutes=interval_minutes))]),
+            spec=ScheduleSpec(
+                intervals=[ScheduleIntervalSpec(every=timedelta(minutes=interval_minutes))]
+            ),
         ),
     )
 
@@ -91,7 +95,7 @@ async def main() -> None:
     )
 
     print(f"\nTask queue: {settings.temporal_task_queue}")
-    print(f"\nView schedules in Temporal UI:")
+    print("\nView schedules in Temporal UI:")
     print(f"  http://localhost:8080/schedules/{HEARTRATE_SCHEDULE_ID}")
     print(f"  http://localhost:8080/schedules/{FULL_SYNC_SCHEDULE_ID}")
     print("\nTo delete and recreate, use Temporal CLI:")

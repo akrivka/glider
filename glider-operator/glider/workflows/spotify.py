@@ -64,9 +64,7 @@ async def fetch_recently_played(after_timestamp_ms: int | None) -> list[dict]:
     from glider.config import settings
     from glider.integrations.spotify import SpotifyClient
 
-    activity.logger.info(
-        f"Fetching recently played tracks (after={after_timestamp_ms})"
-    )
+    activity.logger.info(f"Fetching recently played tracks (after={after_timestamp_ms})")
 
     client = SpotifyClient(
         client_id=settings.spotify_client_id,
@@ -90,16 +88,17 @@ async def get_last_scrobble_timestamp() -> int | None:
     db = AsyncSurreal(settings.surrealdb_url)
     try:
         await db.connect(settings.surrealdb_url)
-        await db.signin({
-            "username": settings.surrealdb_user,
-            "password": settings.surrealdb_pass,
-        })
+        await db.signin(
+            {
+                "username": settings.surrealdb_user,
+                "password": settings.surrealdb_pass,
+            }
+        )
         await db.use(settings.surrealdb_ns, settings.surrealdb_db)
 
         # Get the most recent scrobble
         result = await db.query(
-            "SELECT played_at FROM spotify_listening_history "
-            "ORDER BY played_at DESC LIMIT 1"
+            "SELECT played_at FROM spotify_listening_history ORDER BY played_at DESC LIMIT 1"
         )
 
         if result and result[0].get("result"):
@@ -127,10 +126,12 @@ async def check_duplicate(track_id: str, played_at: str) -> bool:
     db = AsyncSurreal(settings.surrealdb_url)
     try:
         await db.connect(settings.surrealdb_url)
-        await db.signin({
-            "username": settings.surrealdb_user,
-            "password": settings.surrealdb_pass,
-        })
+        await db.signin(
+            {
+                "username": settings.surrealdb_user,
+                "password": settings.surrealdb_pass,
+            }
+        )
         await db.use(settings.surrealdb_ns, settings.surrealdb_db)
 
         # Parse the played_at timestamp
@@ -170,10 +171,12 @@ async def record_listening_event(event: dict) -> str:
     db = AsyncSurreal(settings.surrealdb_url)
     try:
         await db.connect(settings.surrealdb_url)
-        await db.signin({
-            "username": settings.surrealdb_user,
-            "password": settings.surrealdb_pass,
-        })
+        await db.signin(
+            {
+                "username": settings.surrealdb_user,
+                "password": settings.surrealdb_pass,
+            }
+        )
         await db.use(settings.surrealdb_ns, settings.surrealdb_db)
 
         # Create unique ID from timestamp and track ID
@@ -287,9 +290,7 @@ class SpotifyListeningWorkflow:
             self._tracks_recorded = recorded_count
 
         self._status = "completed"
-        workflow.logger.info(
-            f"Recorded {recorded_count} new tracks out of {len(tracks)} fetched"
-        )
+        workflow.logger.info(f"Recorded {recorded_count} new tracks out of {len(tracks)} fetched")
 
         return SpotifyPollResult(
             tracks_fetched=len(tracks),

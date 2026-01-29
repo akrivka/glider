@@ -95,15 +95,10 @@ class SpotifyClient:
                         error_data = response.json()
                         error = error_data.get("error", "unknown")
                         error_desc = error_data.get("error_description", "")
-                        logger.error(
-                            f"Spotify token refresh failed: {error} - {error_desc}"
-                        )
+                        logger.error(f"Spotify token refresh failed: {error} - {error_desc}")
                         logger.error(f"Full error response: {error_data}")
 
-                        if (
-                            "refresh token" in error_desc.lower()
-                            or error == "invalid_grant"
-                        ):
+                        if "refresh token" in error_desc.lower() or error == "invalid_grant":
                             raise RuntimeError(
                                 f"Spotify refresh token expired or revoked "
                                 f"({error}: {error_desc}). "
@@ -129,9 +124,7 @@ class SpotifyClient:
             self._tokens = SpotifyTokens(
                 access_token=data["access_token"],
                 refresh_token=new_refresh_token,
-                expires_at=time.time()
-                + data["expires_in"]
-                - TOKEN_REFRESH_BUFFER_SECONDS,
+                expires_at=time.time() + data["expires_in"] - TOKEN_REFRESH_BUFFER_SECONDS,
             )
             self._save_tokens(self._tokens)
             logger.info("Spotify access token refreshed successfully")
@@ -151,8 +144,7 @@ class SpotifyClient:
 
         if not self._tokens:
             raise RuntimeError(
-                "No tokens available. "
-                "Run 'python -m glider.integrations.spotify_auth_setup' first."
+                "No tokens available. Run 'python -m glider.integrations.spotify_auth_setup' first."
             )
 
         # Proactive refresh: refresh if token will expire within the buffer window

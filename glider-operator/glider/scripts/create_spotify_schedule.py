@@ -55,7 +55,9 @@ async def main() -> None:
                 id="spotify-listening-poll",
                 task_queue=settings.temporal_task_queue,
             ),
-            spec=ScheduleSpec(intervals=[ScheduleIntervalSpec(every=timedelta(seconds=interval_seconds))]),
+            spec=ScheduleSpec(
+                intervals=[ScheduleIntervalSpec(every=timedelta(seconds=interval_seconds))]
+            ),
         ),
     )
 

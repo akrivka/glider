@@ -55,9 +55,7 @@ async def main() -> None:
                 id="google-calendar-sync",
                 task_queue=settings.temporal_task_queue,
             ),
-            spec=ScheduleSpec(
-                intervals=[ScheduleIntervalSpec(every=timedelta(minutes=30))]
-            ),
+            spec=ScheduleSpec(intervals=[ScheduleIntervalSpec(every=timedelta(minutes=30))]),
         ),
     )
 

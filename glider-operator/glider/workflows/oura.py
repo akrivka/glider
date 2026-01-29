@@ -401,16 +401,20 @@ class OuraFullSyncWorkflow:
         end_str = end_date.strftime("%Y-%m-%d")
 
         # Determine which data types to sync
-        data_types = input.data_types if input.data_types else [
-            OuraDataType.DAILY_STRESS.value,
-            OuraDataType.DAILY_ACTIVITY.value,
-            OuraDataType.DAILY_READINESS.value,
-            OuraDataType.DAILY_SLEEP.value,
-            OuraDataType.DAILY_SPO2.value,
-            OuraDataType.SLEEP.value,
-            OuraDataType.SESSION.value,
-            OuraDataType.WORKOUT.value,
-        ]
+        data_types = (
+            input.data_types
+            if input.data_types
+            else [
+                OuraDataType.DAILY_STRESS.value,
+                OuraDataType.DAILY_ACTIVITY.value,
+                OuraDataType.DAILY_READINESS.value,
+                OuraDataType.DAILY_SLEEP.value,
+                OuraDataType.DAILY_SPO2.value,
+                OuraDataType.SLEEP.value,
+                OuraDataType.SESSION.value,
+                OuraDataType.WORKOUT.value,
+            ]
+        )
 
         for data_type in data_types:
             self._current_type = data_type
@@ -494,5 +498,8 @@ class OuraFullSyncWorkflow:
         return {
             "status": self._status,
             "current_type": self._current_type,
-            "results": {k: {"fetched": v.samples_fetched, "stored": v.samples_stored} for k, v in self._results.items()},
+            "results": {
+                k: {"fetched": v.samples_fetched, "stored": v.samples_stored}
+                for k, v in self._results.items()
+            },
         }
