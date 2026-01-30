@@ -353,6 +353,7 @@ def _resolve_daily_window(
     return start_str, end_str
 
 
+@logfire.instrument("sync_oura")
 async def sync_oura(
     lookback_days: int = 7,
     data_types: list[str] | None = None,
@@ -364,68 +365,60 @@ async def sync_oura(
     now = datetime.now(UTC)
     results: dict[str, OuraSyncResult] = {}
 
-    with logfire.span(
-        "sync_oura",
-        lookback_days=lookback_days,
-        types=types,
-        force_lookback=force_lookback,
-    ):
-        for data_type in types:
-            try:
-                with logfire.span("sync_oura_type", data_type=data_type):
-                    sync_state = await load_oura_sync_state_for_type(data_type)
+    for data_type in types:
+        try:
+            with logfire.span("sync_oura_type", data_type=data_type):
+                sync_state = await load_oura_sync_state_for_type(data_type)
 
-                    if data_type == OuraDataType.HEARTRATE.value:
-                        start_str, end_str = _resolve_heartrate_window(
-                            sync_state, now, lookback_days, force_lookback
-                        )
-                        samples = await fetch_oura_heartrate(start_str, end_str)
-                        samples = samples if samples is not None else []
-                        stored_count = await store_heartrate_samples(samples) if samples else 0
-                        await save_oura_sync_state_for_type(
-                            data_type,
-                            {
-                                "last_sync_start": start_str,
-                                "last_sync_end": end_str,
-                                "last_sync_at": now.isoformat(),
-                                "samples_fetched": len(samples),
-                                "samples_stored": stored_count,
-                            },
-                        )
-                        results[data_type] = OuraSyncResult(
-                            samples_fetched=len(samples),
-                            samples_stored=stored_count,
-                            sync_start=start_str,
-                            sync_end=end_str,
-                        )
-                    else:
-                        start_str, end_str = _resolve_daily_window(
-                            sync_state, now, lookback_days, force_lookback
-                        )
-                        records = await fetch_oura_daily_data(data_type, start_str, end_str)
-                        records = records if records is not None else []
-                        stored_count = (
-                            await store_oura_daily_data(data_type, records) if records else 0
-                        )
-                        await save_oura_sync_state_for_type(
-                            data_type,
-                            {
-                                "last_sync_start": start_str,
-                                "last_sync_end": end_str,
-                                "last_sync_at": now.isoformat(),
-                                "records_fetched": len(records),
-                                "records_stored": stored_count,
-                            },
-                        )
-                        results[data_type] = OuraSyncResult(
-                            samples_fetched=len(records),
-                            samples_stored=stored_count,
-                            sync_start=start_str,
-                            sync_end=end_str,
-                        )
-            except Exception as exc:
-                logfire.error("Failed to sync {data_type}: {error}", data_type=data_type, error=exc)
-                logfire.exception("Oura sync failed", data_type=data_type)
+                if data_type == OuraDataType.HEARTRATE.value:
+                    start_str, end_str = _resolve_heartrate_window(
+                        sync_state, now, lookback_days, force_lookback
+                    )
+                    samples = await fetch_oura_heartrate(start_str, end_str)
+                    samples = samples if samples is not None else []
+                    stored_count = await store_heartrate_samples(samples) if samples else 0
+                    await save_oura_sync_state_for_type(
+                        data_type,
+                        {
+                            "last_sync_start": start_str,
+                            "last_sync_end": end_str,
+                            "last_sync_at": now.isoformat(),
+                            "samples_fetched": len(samples),
+                            "samples_stored": stored_count,
+                        },
+                    )
+                    results[data_type] = OuraSyncResult(
+                        samples_fetched=len(samples),
+                        samples_stored=stored_count,
+                        sync_start=start_str,
+                        sync_end=end_str,
+                    )
+                else:
+                    start_str, end_str = _resolve_daily_window(
+                        sync_state, now, lookback_days, force_lookback
+                    )
+                    records = await fetch_oura_daily_data(data_type, start_str, end_str)
+                    records = records if records is not None else []
+                    stored_count = await store_oura_daily_data(data_type, records) if records else 0
+                    await save_oura_sync_state_for_type(
+                        data_type,
+                        {
+                            "last_sync_start": start_str,
+                            "last_sync_end": end_str,
+                            "last_sync_at": now.isoformat(),
+                            "records_fetched": len(records),
+                            "records_stored": stored_count,
+                        },
+                    )
+                    results[data_type] = OuraSyncResult(
+                        samples_fetched=len(records),
+                        samples_stored=stored_count,
+                        sync_start=start_str,
+                        sync_end=end_str,
+                    )
+        except Exception as exc:
+            logfire.error("Failed to sync {data_type}: {error}", data_type=data_type, error=exc)
+            logfire.exception("Oura sync failed", data_type=data_type)
 
     logfire.info("Oura sync complete", types_synced=len(results))
 

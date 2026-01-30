@@ -165,22 +165,22 @@ async def save_sync_state(calendar_id: str, sync_token: str | None) -> None:
         await db.close()
 
 
+@logfire.instrument("sync_google_calendar")
 async def sync_google_calendar(
     calendar_id: str = "primary",
     *,
     days_back: int = 30,
     ignore_sync_token: bool = False,
 ) -> CalendarSyncResult:
-    with logfire.span("sync_google_calendar", calendar_id=calendar_id):
-        events, next_sync_token = await fetch_google_calendar_events(
-            calendar_id,
-            days_back=days_back,
-            ignore_sync_token=ignore_sync_token,
-        )
-        events_synced = await store_calendar_events(events, calendar_id)
-        await save_sync_state(calendar_id, next_sync_token)
-        logfire.info("Google Calendar sync complete", events_synced=events_synced)
-        return CalendarSyncResult(events_synced=events_synced, sync_token=next_sync_token)
+    events, next_sync_token = await fetch_google_calendar_events(
+        calendar_id,
+        days_back=days_back,
+        ignore_sync_token=ignore_sync_token,
+    )
+    events_synced = await store_calendar_events(events, calendar_id)
+    await save_sync_state(calendar_id, next_sync_token)
+    logfire.info("Google Calendar sync complete", events_synced=events_synced)
+    return CalendarSyncResult(events_synced=events_synced, sync_token=next_sync_token)
 
 
 def main() -> None:

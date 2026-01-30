@@ -186,78 +186,76 @@ async def record_listening_event(event: dict) -> str:
         await db.close()
 
 
+@logfire.instrument("sync_spotify")
 async def sync_spotify() -> SpotifyPollResult:
     logfire.info("Starting Spotify sync")
 
-    with logfire.span("sync_spotify"):
-        # Get last scrobble timestamp to determine lookback
-        last_timestamp = await get_last_scrobble_timestamp()
+    # Get last scrobble timestamp to determine lookback
+    last_timestamp = await get_last_scrobble_timestamp()
 
-        # Calculate lookback: use last timestamp minus 2 hours, or None for first run
-        if last_timestamp:
-            lookback_ms = last_timestamp - (LOOKBACK_HOURS * 60 * 60 * 1000)
-        else:
-            lookback_ms = None
-            logfire.info("First run - fetching all available history")
+    # Calculate lookback: use last timestamp minus 2 hours, or None for first run
+    if last_timestamp:
+        lookback_ms = last_timestamp - (LOOKBACK_HOURS * 60 * 60 * 1000)
+    else:
+        lookback_ms = None
+        logfire.info("First run - fetching all available history")
 
-        # Fetch recently played tracks
-        tracks = await fetch_recently_played(lookback_ms)
+    # Fetch recently played tracks
+    tracks = await fetch_recently_played(lookback_ms)
 
-        logfire.info("Fetched {track_count} tracks from Spotify", track_count=len(tracks))
+    logfire.info("Fetched {track_count} tracks from Spotify", track_count=len(tracks))
 
-        if not tracks:
-            logfire.info("Spotify sync complete", tracks_fetched=0, tracks_recorded=0)
-            return SpotifyPollResult(
-                tracks_fetched=0,
-                tracks_recorded=0,
-                latest_played_at=None,
-            )
-
-        # Process each track - check for duplicates and record new ones
-        recorded_count = 0
-        latest_played_at = None
-
-        for track in tracks:
-            track_id = track.get("spotify_track_id")
-            played_at = track.get("played_at")
-
-            if not track_id or not played_at:
-                continue
-
-            # Track the latest played_at for reporting
-            if latest_played_at is None or played_at > latest_played_at:
-                latest_played_at = played_at
-
-            # Check for duplicates
-            is_duplicate = await check_duplicate(track_id, played_at)
-
-            if is_duplicate:
-                logfire.debug(
-                    "Skipping duplicate: {track_name}", track_name=track.get("track_name")
-                )
-                continue
-
-            # Record new track
-            await record_listening_event(track)
-            recorded_count += 1
-
-        logfire.info(
-            "Recorded {recorded_count} new tracks out of {track_count} fetched",
-            recorded_count=recorded_count,
-            track_count=len(tracks),
-        )
-        logfire.info(
-            "Spotify sync complete",
-            tracks_fetched=len(tracks),
-            tracks_recorded=recorded_count,
-            latest_played_at=latest_played_at,
-        )
-
+    if not tracks:
+        logfire.info("Spotify sync complete", tracks_fetched=0, tracks_recorded=0)
         return SpotifyPollResult(
-            tracks_fetched=len(tracks),
-            tracks_recorded=recorded_count,
-            latest_played_at=latest_played_at,
+            tracks_fetched=0,
+            tracks_recorded=0,
+            latest_played_at=None,
         )
+
+    # Process each track - check for duplicates and record new ones
+    recorded_count = 0
+    latest_played_at = None
+
+    for track in tracks:
+        track_id = track.get("spotify_track_id")
+        played_at = track.get("played_at")
+
+        if not track_id or not played_at:
+            continue
+
+        # Track the latest played_at for reporting
+        if latest_played_at is None or played_at > latest_played_at:
+            latest_played_at = played_at
+
+        # Check for duplicates
+        is_duplicate = await check_duplicate(track_id, played_at)
+
+        if is_duplicate:
+            logfire.debug("Skipping duplicate: {track_name}", track_name=track.get("track_name"))
+            continue
+
+        # Record new track
+        await record_listening_event(track)
+        recorded_count += 1
+
+    logfire.info(
+        "Recorded {recorded_count} new tracks out of {track_count} fetched",
+        recorded_count=recorded_count,
+        track_count=len(tracks),
+    )
+    logfire.info(
+        "Spotify sync complete",
+        tracks_fetched=len(tracks),
+        tracks_recorded=recorded_count,
+        latest_played_at=latest_played_at,
+    )
+
+    return SpotifyPollResult(
+        tracks_fetched=len(tracks),
+        tracks_recorded=recorded_count,
+        latest_played_at=latest_played_at,
+    )
 
 
 def main() -> None:
