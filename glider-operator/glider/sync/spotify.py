@@ -4,15 +4,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 import logfire
 
-from glider.logging_setup import configure_logfire, configure_logging
-
-logger = logging.getLogger(__name__)
+from glider.logging_setup import configure_logfire
 
 # Lookback window: fetch tracks played in last 2 hours to handle gaps
 LOOKBACK_HOURS = 2
@@ -53,7 +50,10 @@ async def fetch_recently_played(after_timestamp_ms: int | None) -> list[dict]:
     from glider.config import settings
     from glider.integrations.spotify import SpotifyClient
 
-    logger.info("Fetching recently played tracks (after=%s)", after_timestamp_ms)
+    logfire.info(
+        "Fetching recently played tracks (after={after_timestamp_ms})",
+        after_timestamp_ms=after_timestamp_ms,
+    )
 
     client = SpotifyClient(
         client_id=settings.spotify_client_id,
@@ -71,7 +71,7 @@ async def get_last_scrobble_timestamp() -> int | None:
 
     from glider.config import settings
 
-    logger.info("Getting last scrobble timestamp")
+    logfire.info("Getting last scrobble timestamp")
 
     db = AsyncSurreal(settings.surrealdb_url)
     try:
@@ -152,7 +152,7 @@ async def record_listening_event(event: dict) -> str:
 
     from glider.config import settings
 
-    logger.info("Recording: %s", event.get("track_name"))
+    logfire.info("Recording: {track_name}", track_name=event.get("track_name"))
 
     db = AsyncSurreal(settings.surrealdb_url)
     try:
@@ -180,14 +180,14 @@ async def record_listening_event(event: dict) -> str:
         event["_synced_at"] = datetime.now(UTC).isoformat() + "Z"
 
         await db.upsert(record_id, event)
-        logger.info("Recorded: %s", record_id)
+        logfire.info("Recorded: {record_id}", record_id=record_id)
         return record_id
     finally:
         await db.close()
 
 
 async def sync_spotify() -> SpotifyPollResult:
-    logger.info("Starting Spotify sync")
+    logfire.info("Starting Spotify sync")
 
     with logfire.span("sync_spotify"):
         # Get last scrobble timestamp to determine lookback
@@ -198,12 +198,12 @@ async def sync_spotify() -> SpotifyPollResult:
             lookback_ms = last_timestamp - (LOOKBACK_HOURS * 60 * 60 * 1000)
         else:
             lookback_ms = None
-            logger.info("First run - fetching all available history")
+            logfire.info("First run - fetching all available history")
 
         # Fetch recently played tracks
         tracks = await fetch_recently_played(lookback_ms)
 
-        logger.info("Fetched %s tracks from Spotify", len(tracks))
+        logfire.info("Fetched {track_count} tracks from Spotify", track_count=len(tracks))
 
         if not tracks:
             logfire.info("Spotify sync complete", tracks_fetched=0, tracks_recorded=0)
@@ -232,17 +232,19 @@ async def sync_spotify() -> SpotifyPollResult:
             is_duplicate = await check_duplicate(track_id, played_at)
 
             if is_duplicate:
-                logger.debug("Skipping duplicate: %s", track.get("track_name"))
+                logfire.debug(
+                    "Skipping duplicate: {track_name}", track_name=track.get("track_name")
+                )
                 continue
 
             # Record new track
             await record_listening_event(track)
             recorded_count += 1
 
-        logger.info(
-            "Recorded %s new tracks out of %s fetched",
-            recorded_count,
-            len(tracks),
+        logfire.info(
+            "Recorded {recorded_count} new tracks out of {track_count} fetched",
+            recorded_count=recorded_count,
+            track_count=len(tracks),
         )
         logfire.info(
             "Spotify sync complete",
@@ -259,7 +261,6 @@ async def sync_spotify() -> SpotifyPollResult:
 
 
 def main() -> None:
-    configure_logging()
     configure_logfire()
     parser = argparse.ArgumentParser(description="Sync Spotify listening history")
     parser.parse_args()

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import Enum
@@ -13,9 +12,7 @@ import logfire
 
 from glider.config import settings
 from glider.integrations.oura import OuraClient
-from glider.logging_setup import configure_logfire, configure_logging
-
-logger = logging.getLogger(__name__)
+from glider.logging_setup import configure_logfire
 
 
 class OuraDataType(str, Enum):
@@ -86,7 +83,11 @@ def _get_oura_client() -> OuraClient:
 
 async def fetch_oura_heartrate(start_datetime: str, end_datetime: str) -> list[dict]:
     """Fetch heart rate data from Oura API."""
-    logger.info("Fetching Oura heartrate from %s to %s", start_datetime, end_datetime)
+    logfire.info(
+        "Fetching Oura heartrate from {start_datetime} to {end_datetime}",
+        start_datetime=start_datetime,
+        end_datetime=end_datetime,
+    )
 
     client = _get_oura_client()
 
@@ -98,7 +99,12 @@ async def fetch_oura_heartrate(start_datetime: str, end_datetime: str) -> list[d
 
 async def fetch_oura_daily_data(data_type: str, start_date: str, end_date: str) -> list[dict]:
     """Fetch daily data from Oura API for a specific data type."""
-    logger.info("Fetching Oura %s from %s to %s", data_type, start_date, end_date)
+    logfire.info(
+        "Fetching Oura {data_type} from {start_date} to {end_date}",
+        data_type=data_type,
+        start_date=start_date,
+        end_date=end_date,
+    )
 
     client = _get_oura_client()
 
@@ -129,7 +135,7 @@ async def load_oura_sync_state_for_type(data_type: str) -> dict | None:
 
     from glider.config import settings
 
-    logger.info("Loading Oura sync state for %s", data_type)
+    logfire.info("Loading Oura sync state for {data_type}", data_type=data_type)
 
     db = AsyncSurreal(settings.surrealdb_url)
     try:
@@ -176,7 +182,7 @@ async def store_heartrate_samples(samples: list[dict]) -> int:
     if not samples:
         return 0
 
-    logger.info("Storing %s heartrate samples", len(samples))
+    logfire.info("Storing {sample_count} heartrate samples", sample_count=len(samples))
 
     db = AsyncSurreal(settings.surrealdb_url)
     try:
@@ -204,7 +210,7 @@ async def store_heartrate_samples(samples: list[dict]) -> int:
                 dt = datetime.fromisoformat(ts_clean)
                 timestamp_ms = int(dt.timestamp() * 1000)
             except ValueError:
-                logger.warning("Invalid timestamp: %s", timestamp)
+                logfire.warning("Invalid timestamp: {timestamp}", timestamp=timestamp)
                 continue
 
             record_id = f"oura_heartrate:{timestamp_ms}"
@@ -219,7 +225,7 @@ async def store_heartrate_samples(samples: list[dict]) -> int:
             await db.upsert(record_id, record)
             stored_count += 1
 
-        logger.info("Stored %s heartrate samples", stored_count)
+        logfire.info("Stored {stored_count} heartrate samples", stored_count=stored_count)
         return stored_count
     finally:
         await db.close()
@@ -234,7 +240,11 @@ async def store_oura_daily_data(data_type: str, records: list[dict]) -> int:
     if not records:
         return 0
 
-    logger.info("Storing %s %s records", len(records), data_type)
+    logfire.info(
+        "Storing {record_count} {data_type} records",
+        record_count=len(records),
+        data_type=data_type,
+    )
 
     # Map data type to table name
     table_map = {
@@ -281,7 +291,11 @@ async def store_oura_daily_data(data_type: str, records: list[dict]) -> int:
             await db.upsert(record_id, record_data)
             stored_count += 1
 
-        logger.info("Stored %s %s records", stored_count, data_type)
+        logfire.info(
+            "Stored {stored_count} {data_type} records",
+            stored_count=stored_count,
+            data_type=data_type,
+        )
         return stored_count
     finally:
         await db.close()
@@ -344,7 +358,7 @@ async def sync_oura(
     data_types: list[str] | None = None,
     force_lookback: bool = False,
 ) -> OuraSyncSummary:
-    logger.info("Starting Oura sync")
+    logfire.info("Starting Oura sync")
 
     types = _normalize_data_types(data_types)
     now = datetime.now(UTC)
@@ -410,7 +424,7 @@ async def sync_oura(
                             sync_end=end_str,
                         )
             except Exception as exc:
-                logger.error("Failed to sync %s: %s", data_type, exc)
+                logfire.error("Failed to sync {data_type}: {error}", data_type=data_type, error=exc)
                 logfire.exception("Oura sync failed", data_type=data_type)
 
     logfire.info("Oura sync complete", types_synced=len(results))
@@ -429,7 +443,6 @@ def _parse_data_types(value: str | None) -> list[str]:
 
 
 def main() -> None:
-    configure_logging()
     configure_logfire()
     parser = argparse.ArgumentParser(description="Sync Oura data")
     parser.add_argument("--mode", choices=["heartrate", "full"], default="full")

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -14,7 +13,7 @@ from typing import Any
 import logfire
 
 from glider.config import settings
-from glider.logging_setup import configure_logfire, configure_logging
+from glider.logging_setup import configure_logfire
 from glider.sync.google_calendar import sync_google_calendar
 from glider.sync.oura import DEFAULT_DATA_TYPES, sync_oura
 from glider.sync.spotify import sync_spotify
@@ -23,10 +22,6 @@ try:
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover - Python < 3.11
     import tomli as tomllib  # type: ignore[no-redef]
-
-
-configure_logging()
-logger = logging.getLogger(__name__)
 
 
 @dataclass

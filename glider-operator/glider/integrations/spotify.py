@@ -1,14 +1,12 @@
 """Spotify integration client."""
 
 import json
-import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
-
-logger = logging.getLogger(__name__)
+import logfire
 
 SCOPES = ["user-read-recently-played"]
 AUTH_URL = "https://accounts.spotify.com/authorize"
@@ -77,7 +75,7 @@ class SpotifyClient:
         if not self._tokens:
             raise RuntimeError("No tokens available to refresh")
 
-        logger.info("Refreshing Spotify access token")
+        logfire.info("Refreshing Spotify access token")
 
         try:
             with httpx.Client() as client:
@@ -95,8 +93,12 @@ class SpotifyClient:
                         error_data = response.json()
                         error = error_data.get("error", "unknown")
                         error_desc = error_data.get("error_description", "")
-                        logger.error(f"Spotify token refresh failed: {error} - {error_desc}")
-                        logger.error(f"Full error response: {error_data}")
+                        logfire.error(
+                            "Spotify token refresh failed: {error} - {error_desc}",
+                            error=error,
+                            error_desc=error_desc,
+                        )
+                        logfire.error("Full error response: {error_data}", error_data=error_data)
 
                         if "refresh token" in error_desc.lower() or error == "invalid_grant":
                             raise RuntimeError(
@@ -110,7 +112,10 @@ class SpotifyClient:
                                 f"Spotify token refresh failed: {error} - {error_desc}"
                             )
                     except json.JSONDecodeError as e:
-                        logger.error(f"Could not parse error response: {response.text}")
+                        logfire.error(
+                            "Could not parse error response: {response_text}",
+                            response_text=response.text,
+                        )
                         raise RuntimeError(
                             f"Spotify token refresh failed with status 400: {response.text}"
                         ) from e
@@ -127,10 +132,10 @@ class SpotifyClient:
                 expires_at=time.time() + data["expires_in"] - TOKEN_REFRESH_BUFFER_SECONDS,
             )
             self._save_tokens(self._tokens)
-            logger.info("Spotify access token refreshed successfully")
+            logfire.info("Spotify access token refreshed successfully")
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"Failed to refresh Spotify token: {e}")
+            logfire.error("Failed to refresh Spotify token: {error}", error=e)
             raise RuntimeError(f"Failed to refresh Spotify token: {e}") from e
 
     def _get_access_token(self) -> str:
@@ -150,7 +155,7 @@ class SpotifyClient:
         # Proactive refresh: refresh if token will expire within the buffer window
         # This ensures we never make API calls with tokens that are about to expire
         if time.time() >= self._tokens.expires_at:
-            logger.debug("Token expired or about to expire, refreshing proactively")
+            logfire.debug("Token expired or about to expire, refreshing proactively")
             self._refresh_access_token()
 
         return self._tokens.access_token
@@ -187,17 +192,17 @@ class SpotifyClient:
 
             # 204 No Content = nothing playing
             if response.status_code == 204:
-                logger.debug("No track currently playing")
+                logfire.debug("No track currently playing")
                 return None
 
             # 401 = token expired, try refresh once (but only once to prevent infinite loop)
             if response.status_code == 401 and not _retried:
-                logger.warning("Got 401 from Spotify API, attempting token refresh")
+                logfire.warning("Got 401 from Spotify API, attempting token refresh")
                 self._refresh_access_token()
                 return self.get_currently_playing(_retried=True)
 
             if response.status_code == 401 and _retried:
-                logger.error(
+                logfire.error(
                     "Got 401 after token refresh. Refresh token may be expired. "
                     "Run 'python -m glider.integrations.spotify_auth_setup' to reauthenticate."
                 )
@@ -252,7 +257,7 @@ class SpotifyClient:
 
                 # 401 = token expired, try refresh once
                 if response.status_code == 401 and not _retried:
-                    logger.warning("Got 401 from Spotify API, attempting token refresh")
+                    logfire.warning("Got 401 from Spotify API, attempting token refresh")
                     self._refresh_access_token()
                     return self.get_recently_played(
                         after_timestamp_ms=after_timestamp_ms,
@@ -261,7 +266,7 @@ class SpotifyClient:
                     )
 
                 if response.status_code == 401 and _retried:
-                    logger.error(
+                    logfire.error(
                         "Got 401 after token refresh. Refresh token may be expired. "
                         "Run 'python -m glider.integrations.spotify_auth_setup' to reauthenticate."
                     )
@@ -275,9 +280,15 @@ class SpotifyClient:
                 # Handle pagination - Spotify provides full URL for next page
                 url = data.get("next")
 
-                logger.debug(
-                    f"Fetched {len(items)} tracks, total: {len(all_items)}, next: {bool(url)}"
+                logfire.debug(
+                    "Fetched {batch_count} tracks, total: {total_count}, next: {has_next}",
+                    batch_count=len(items),
+                    total_count=len(all_items),
+                    has_next=bool(url),
                 )
 
-        logger.info(f"Fetched {len(all_items)} recently played tracks")
+        logfire.info(
+            "Fetched {total_count} recently played tracks",
+            total_count=len(all_items),
+        )
         return all_items

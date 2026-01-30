@@ -2,15 +2,9 @@
 
 from __future__ import annotations
 
-import logging
-
 import logfire
 
 from glider.config import settings
-
-
-def configure_logging() -> None:
-    logging.basicConfig(level=logging.INFO)
 
 
 def configure_logfire() -> None:

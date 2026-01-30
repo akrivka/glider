@@ -4,15 +4,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 import logfire
 
-from glider.logging_setup import configure_logfire, configure_logging
-
-logger = logging.getLogger(__name__)
+from glider.logging_setup import configure_logfire
 
 
 @dataclass
@@ -31,7 +28,7 @@ async def fetch_google_calendar_events(
     from glider.config import settings
     from glider.integrations.google_calendar import GoogleCalendarClient
 
-    logger.info("Fetching events from calendar: %s", calendar_id)
+    logfire.info("Fetching events from calendar: {calendar_id}", calendar_id=calendar_id)
 
     client = GoogleCalendarClient(
         client_secret_path=settings.google_client_secret_path,
@@ -53,7 +50,7 @@ async def fetch_google_calendar_events(
         show_deleted=True,
     )
 
-    logger.info("Fetched %s events", len(events))
+    logfire.info("Fetched {event_count} events", event_count=len(events))
     return events, next_sync_token
 
 
@@ -86,10 +83,10 @@ async def store_calendar_events(events: list[dict], calendar_id: str) -> int:
     from glider.config import settings
 
     if not events:
-        logger.info("No events to store")
+        logfire.info("No events to store")
         return 0
 
-    logger.info("Storing %s events in SurrealDB", len(events))
+    logfire.info("Storing {event_count} events in SurrealDB", event_count=len(events))
 
     db = AsyncSurreal(settings.surrealdb_url)
     try:
@@ -109,7 +106,7 @@ async def store_calendar_events(events: list[dict], calendar_id: str) -> int:
             if event.get("status") == "cancelled":
                 record_id = f"google_calendar_events:{google_id}"
                 await db.delete(record_id)
-                logger.info("Deleted cancelled event: %s", google_id)
+                logfire.info("Deleted cancelled event: {google_id}", google_id=google_id)
                 continue
 
             event_data = {
@@ -135,7 +132,7 @@ async def store_calendar_events(events: list[dict], calendar_id: str) -> int:
             await db.upsert(record_id, event_data)
             stored_count += 1
 
-        logger.info("Stored %s events", stored_count)
+        logfire.info("Stored {stored_count} events", stored_count=stored_count)
         return stored_count
     finally:
         await db.close()
@@ -147,7 +144,7 @@ async def save_sync_state(calendar_id: str, sync_token: str | None) -> None:
 
     from glider.config import settings
 
-    logger.info("Saving sync state for calendar: %s", calendar_id)
+    logfire.info("Saving sync state for calendar: {calendar_id}", calendar_id=calendar_id)
 
     db = AsyncSurreal(settings.surrealdb_url)
     try:
@@ -163,7 +160,7 @@ async def save_sync_state(calendar_id: str, sync_token: str | None) -> None:
         }
 
         await db.upsert(record_id, state_data)
-        logger.info("Sync state saved")
+        logfire.info("Sync state saved")
     finally:
         await db.close()
 
@@ -187,7 +184,6 @@ async def sync_google_calendar(
 
 
 def main() -> None:
-    configure_logging()
     configure_logfire()
     parser = argparse.ArgumentParser(description="Sync Google Calendar to SurrealDB")
     parser.add_argument("--calendar-id", default="primary")
